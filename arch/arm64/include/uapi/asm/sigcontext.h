@@ -16,6 +16,7 @@
 #ifndef _UAPI__ASM_SIGCONTEXT_H
 #define _UAPI__ASM_SIGCONTEXT_H
 
+#ifdef CONFIG_64BIT
 #include <linux/types.h>
 
 /*
@@ -61,4 +62,70 @@ struct esr_context {
 	__u64 esr;
 };
 
+/*
+ * extra_context: describes extra space in the signal frame for
+ * additional structures that don't fit in sigcontext.__reserved[].
+ *
+ * Note:
+ *
+ * 1) fpsimd_context, esr_context and extra_context must be placed in
+ * sigcontext.__reserved[] if present.  They cannot be placed in the
+ * extra space.  Any other record can be placed either in the extra
+ * space or in sigcontext.__reserved[], unless otherwise specified in
+ * this file.
+ *
+ * 2) There must not be more than one extra_context.
+ *
+ * 3) If extra_context is present, it must be followed immediately in
+ * sigcontext.__reserved[] by the terminating null _aarch64_ctx.
+ *
+ * 4) The extra space to which datap points must start at the first
+ * 16-byte aligned address immediately after the terminating null
+ * _aarch64_ctx that follows the extra_context structure in
+ * __reserved[].  The extra space may overrun the end of __reserved[],
+ * as indicated by a sufficiently large value for the size field.
+ *
+ * 5) The extra space must itself be terminated with a null
+ * _aarch64_ctx.
+ */
+#define EXTRA_MAGIC	0x45585401
+
+struct extra_context {
+	struct _aarch64_ctx head;
+	__u64 datap; /* 16-byte aligned pointer to extra space cast to __u64 */
+	__u32 size; /* size in bytes of the extra space */
+	__u32 __reserved[3];
+};
+
+#else /* CONFIG_64BIT */
+
+/*
+ * Signal context structure - contains all info to do with the state
+ * before the signal handler was invoked.  Note: only add new entries
+ * to the end of the structure.
+ */
+struct sigcontext {
+	unsigned long trap_no;
+	unsigned long error_code;
+	unsigned long oldmask;
+	unsigned long arm_r0;
+	unsigned long arm_r1;
+	unsigned long arm_r2;
+	unsigned long arm_r3;
+	unsigned long arm_r4;
+	unsigned long arm_r5;
+	unsigned long arm_r6;
+	unsigned long arm_r7;
+	unsigned long arm_r8;
+	unsigned long arm_r9;
+	unsigned long arm_r10;
+	unsigned long arm_fp;
+	unsigned long arm_ip;
+	unsigned long arm_sp;
+	unsigned long arm_lr;
+	unsigned long arm_pc;
+	unsigned long arm_cpsr;
+	unsigned long fault_address;
+};
+#endif /* CONFIG_64BIT */
 #endif /* _UAPI__ASM_SIGCONTEXT_H */
