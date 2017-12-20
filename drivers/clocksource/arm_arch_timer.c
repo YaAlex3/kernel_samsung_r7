@@ -48,6 +48,8 @@
 #define CNTFRQ		0x10
 #define CNTP_TVAL	0x28
 #define CNTP_CTL	0x2c
+#define CNTCVAL_LO	0x30
+#define CNTCVAL_HI	0x34
 #define CNTV_TVAL	0x38
 #define CNTV_CTL	0x3c
 
@@ -924,7 +926,7 @@ static int __init arch_timer_init(void)
 		return ret;
 
 	arch_timer_kvm_info.virtual_irq = arch_timer_ppi[VIRT_PPI];
-	
+
 	return 0;
 }
 
