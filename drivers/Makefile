@@ -221,8 +221,6 @@ obj-$(CONFIG_SENSORS_FINGERPRINT) += fingerprint/
 # Vision driver
 obj-$(CONFIG_VISION_SUPPORT)	+= vision/
 
-obj-y				+= kperfmon/
-
 #TZIC
 obj-y  += security/samsung/tzic/
 
