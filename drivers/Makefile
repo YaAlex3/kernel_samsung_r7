@@ -200,17 +200,11 @@ obj-$(CONFIG_SEC_EXT)           += samsung/
 # vibrator
 obj-y				+= vibrator/
 
-# FIVE TEE driver
-obj-$(CONFIG_FIVE_TEE_DRIVER)	+= security/samsung/five_tee_driver/
-
-# ICDriver
-obj-$(CONFIG_ICD)		+= security/samsung/icdrv/
-
 # Sensorhub driver
 obj-$(CONFIG_SENSORS_SSP)	+= sensorhub/
 
 # GNSS
-obj-$(CONFIG_GPS_BCM4753)	+= gps/	
+obj-$(CONFIG_GPS_BCM4753)	+= gps/
 
 #Sensor
 obj-$(CONFIG_SENSORS)		+= sensors/
@@ -221,11 +215,5 @@ obj-$(CONFIG_SENSORS_FINGERPRINT) += fingerprint/
 # Vision driver
 obj-$(CONFIG_VISION_SUPPORT)	+= vision/
 
-#TZIC
-obj-y  += security/samsung/tzic/
-
 # SPU signature verify
 obj-$(CONFIG_SPU_VERIFY) += spu_verify/
-
-# OLOG
-obj-y				+= kperfmon/

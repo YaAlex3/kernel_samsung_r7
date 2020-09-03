@@ -230,19 +230,12 @@ source "drivers/samsung/Kconfig"
 
 source "drivers/vibrator/Kconfig"
 
-source "drivers/security/samsung/five_tee_driver/Kconfig"
-
-source "drivers/security/samsung/icdrv/Kconfig"
-
 source "drivers/gps/Kconfig"
 
 source "drivers/sensorhub/brcm/Kconfig"
 
 source "drivers/sensors/Kconfig"
 
-source "drivers/security/samsung/tzic/Kconfig"
-
 source "drivers/spu_verify/Kconfig"
 
-source "drivers/kperfmon/Kconfig"
 endmenu
