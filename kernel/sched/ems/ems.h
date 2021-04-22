@@ -35,6 +35,7 @@ static inline int prefer_perf_cpu(struct task_struct *p) { return -1; }
 static inline int prefer_idle_cpu(struct task_struct *p) { return -1; }
 #endif
 
+extern bool is_cpu_preemptible(struct task_struct *p, int prev_cpu, int cpu, int sync);
 extern int task_util(struct task_struct *p);
 extern int cpu_util_wake(int cpu, struct task_struct *p);
 extern unsigned long cpu_util(int cpu);

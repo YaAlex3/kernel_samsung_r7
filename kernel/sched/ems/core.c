@@ -148,9 +148,87 @@ int exynos_need_active_balance(enum cpu_idle_type idle, struct sched_domain *sd,
 	return unlikely(sd->nr_balance_failed > sd->cache_nice_tries + 2);
 }
 
-static int select_proper_cpu(struct task_struct *p)
+extern int wake_cap(struct task_struct *p, int cpu, int prev_cpu);
+bool is_cpu_preemptible(struct task_struct *p, int prev_cpu, int cpu, int sync)
 {
-	return -1;
+	struct rq *rq = cpu_rq(cpu);
+#ifdef CONFIG_SCHED_TUNE
+	struct task_struct *curr = READ_ONCE(rq->curr);
+
+	if (curr && schedtune_prefer_perf(curr) > 0)
+		return false;
+#endif
+
+	if (sync && (rq->nr_running != 1 || wake_cap(p, cpu, prev_cpu)))
+		return false;
+
+	return true;
+}
+
+static int select_proper_cpu(struct task_struct *p, int prev_cpu)
+{
+	int cpu;
+	unsigned long best_min_util = ULONG_MAX;
+	int best_min_util_cpu = -1;
+	int best_cpu = -1;
+
+	for_each_possible_cpu(cpu) {
+		int i;
+
+		/* visit each coregroup only once */
+		if (cpu != cpumask_first(cpu_coregroup_mask(cpu)))
+			continue;
+
+		/* skip if task cannot be assigned to coregroup */
+		if (!cpumask_intersects(&p->cpus_allowed, cpu_coregroup_mask(cpu)))
+			continue;
+
+		for_each_cpu_and(i, tsk_cpus_allowed(p), cpu_coregroup_mask(cpu)) {
+			unsigned long capacity_orig = capacity_orig_of(i);
+			unsigned long wake_util, new_util;
+
+			wake_util = cpu_util_wake(i, p);
+			new_util = wake_util + task_util(p);
+
+			/* skip over-capacity cpu */
+			if (new_util > capacity_orig)
+				continue;
+
+			/*
+			 * Best target) lowest utilization among lowest-cap cpu
+			 *
+			 * If the sequence reaches this function, the wakeup task
+			 * does not require performance and the prev cpu is over-
+			 * utilized, so it should do load balancing without
+			 * considering energy side. Therefore, it selects cpu
+			 * with smallest cpapacity and the least utilization among
+			 * cpu that fits the task.
+			 */
+			if (best_min_util < new_util)
+				continue;
+
+			best_min_util = new_util;
+			best_min_util_cpu = i;
+		}
+
+		/*
+		 * if it fails to find the best cpu in this coregroup, visit next
+		 * coregroup.
+		 */
+		if (cpu_selected(best_min_util_cpu) &&
+		    is_cpu_preemptible(p, -1, best_min_util_cpu, 0)) {
+			best_cpu = best_min_util_cpu;
+			break;
+		}
+	}
+
+	trace_ems_select_proper_cpu(p, best_cpu, best_min_util);
+
+	/*
+	 * if it fails to find the vest cpu, choosing any cpu is meaningless.
+	 * Return prev cpu.
+	 */
+	return cpu_selected(best_cpu) ? best_cpu : prev_cpu;
 }
 
 extern void sync_entity_load_avg(struct sched_entity *se);
