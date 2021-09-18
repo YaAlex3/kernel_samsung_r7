@@ -73,6 +73,8 @@ extern void newbie_join_band(struct task_struct *newbie);
 extern int alloc_bands(void);
 extern void update_band(struct task_struct *p, long old_util);
 extern int band_playing(struct task_struct *p, int cpu);
+
+extern bool is_slowest_cpu(int cpu);
 #else
 static inline struct sched_group *exynos_fit_idlest_group(struct sched_domain *sd,
 		struct task_struct *p) { return NULL; }
@@ -117,6 +119,10 @@ static inline void update_band(struct task_struct *p, long old_util) { }
 static inline int band_playing(struct task_struct *p, int cpu)
 {
 	return 0;
+}
+static inline bool is_slowest_cpu(int cpu)
+{
+	return false;
 }
 #endif /* CONFIG_SCHED_EMS */
 
