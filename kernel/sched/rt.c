@@ -298,7 +298,7 @@ disable:
 
 static int __init init_frt(void)
 {
-	struct frt_dom *dom, *prev = NULL, *head;
+	struct frt_dom *dom, *prev = NULL, *head = NULL;
 	struct device_node *dn;
 	int cpu, tcpu, cnt = 0;
 
@@ -319,7 +319,7 @@ static int __init init_frt(void)
 			goto put_node;
 		}
 
-		if (cpu == 0)
+		if (head == NULL)
 			head = dom;
 
 		dom->activated_cpus = &activated_mask;
@@ -2030,7 +2030,7 @@ void set_task_rq_rt(struct sched_rt_entity *rt_se,
 	n_last_update_time = next->avg.last_update_time;
 #endif
 	__update_load_avg(p_last_update_time, cpu_of(rq_of_rt_rq(prev)),
-		&rt_se->avg, 0, 0, NULL);
+		&rt_se->avg, scale_load_down(NICE_0_LOAD), 0, NULL);
 
 	rt_se->avg.last_update_time = n_last_update_time;
 }
@@ -2068,7 +2068,7 @@ void sync_rt_entity_load_avg(struct sched_rt_entity *rt_se)
 
 	last_update_time = rt_rq_last_update_time(rt_rq);
 	__update_load_avg(last_update_time, cpu_of(rq_of_rt_rq(rt_rq)),
-				&rt_se->avg, 0, 0, NULL);
+			&rt_se->avg, scale_load_down(NICE_0_LOAD), rt_rq->curr == rt_se, NULL);
 }
 
 /*
@@ -2500,7 +2500,7 @@ void update_rt_load_avg(u64 now, struct sched_rt_entity *rt_se)
 		__update_load_avg(now, cpu, &rt_se->avg, scale_load_down(NICE_0_LOAD),
 			rt_rq->curr == rt_se, NULL);
 
-	update_rt_rq_load_avg(now, cpu, rt_rq, true);
+	update_rt_rq_load_avg(now, cpu, rt_rq, rt_rq->curr == rt_se);
 	propagate_entity_rt_load_avg(rt_se);
 
 	if (entity_is_task(rt_se))
@@ -2729,8 +2729,8 @@ static int find_idle_cpu(struct task_struct *task, int wake_flags)
 	if (unlikely(!dom))
 		return best_cpu;
 
-	cpumask_and(&candidate_cpus, &candidate_cpus, get_activated_cpus());
 	cpumask_and(&candidate_cpus, &task->cpus_allowed, cpu_active_mask);
+	cpumask_and(&candidate_cpus, &candidate_cpus, get_activated_cpus());
 	if (unlikely(cpumask_empty(&candidate_cpus)))
 		cpumask_copy(&candidate_cpus, &task->cpus_allowed);
 
@@ -3592,12 +3592,14 @@ static void task_tick_rt(struct rq *rq, struct task_struct *p, int queued)
 {
 	struct sched_rt_entity *rt_se = &p->rt;
 	u64 now = rq_clock_task(rq);
+	int cpu = cpu_of(rq);
 
 	update_curr_rt(rq);
 
 	for_each_sched_rt_entity(rt_se)
 		update_rt_load_avg(now, rt_se);
 
+	update_rt_rq_load_avg(now, cpu, &rq->rt, rq->curr != NULL);
 	update_activated_cpus();
 	watchdog(rq, p);
 

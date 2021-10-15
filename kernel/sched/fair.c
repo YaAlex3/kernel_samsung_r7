@@ -3384,7 +3384,8 @@ int update_rt_rq_load_avg(u64 now, int cpu, struct rt_rq *rt_rq, int running)
 #endif
 	}
 
-	decayed = ___update_load_avg(now, cpu, sa, 0, running, NULL, rt_rq);
+	decayed = ___update_load_avg(now, cpu, sa,
+		scale_load_down(NICE_0_LOAD), running, NULL, rt_rq);
 
 #ifndef CONFIG_64BIT
 	smp_wmb();
@@ -6530,7 +6531,7 @@ static bool cpu_overutilized(int cpu)
 struct reciprocal_value schedtune_spc_rdiv;
 
 long
-schedtune_margin(unsigned long signal, long boost)
+schedtune_margin(unsigned long capacity, unsigned long signal, long boost)
 {
 	long long margin = 0;
 
@@ -6539,11 +6540,11 @@ schedtune_margin(unsigned long signal, long boost)
 	 *
 	 * The Boost (B) value is used to compute a Margin (M) which is
 	 * proportional to the complement of the original Signal (S):
-	 *   M = B * (SCHED_CAPACITY_SCALE - S)
+	 *   M = B * (CAPACITY - S)
 	 * The obtained M could be used by the caller to "boost" S.
 	 */
 	if (boost >= 0) {
-		margin  = SCHED_CAPACITY_SCALE - signal;
+		margin  = capacity - signal;
 		margin *= boost;
 	} else {
 		margin = -signal * boost;
@@ -6560,27 +6561,29 @@ static inline int
 schedtune_cpu_margin(unsigned long util, int cpu)
 {
 	int boost = schedtune_cpu_boost(cpu);
+	unsigned long capacity;
 
 	if (boost == 0)
 		return 0;
 
-	return schedtune_margin(util, boost);
+	capacity = capacity_orig_of(cpu);
+
+	return schedtune_margin(capacity, util, boost);
 }
 
 static inline long
 schedtune_task_margin(struct task_struct *p)
 {
 	int boost = schedtune_task_boost(p);
-	unsigned long util;
-	long margin;
+	unsigned long util, capacity;
 
 	if (boost == 0)
 		return 0;
 
 	util = task_util_est(p);
-	margin = schedtune_margin(util, boost);
+	capacity = capacity_orig_of(task_cpu(p));
 
-	return margin;
+	return schedtune_margin(capacity, util, boost);
 }
 
 #else /* CONFIG_SCHED_TUNE */
