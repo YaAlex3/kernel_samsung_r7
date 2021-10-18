@@ -276,7 +276,7 @@ static int select_eco_cpu(struct eco_env *eenv)
 
 int select_energy_cpu(struct task_struct *p, int prev_cpu, int sd_flag)
 {
-	struct sched_domain *sd = NULL;
+	int cpu = smp_processor_id();
 	struct eco_env eenv = {
 		.p = p,
 		.prev_cpu = prev_cpu,
@@ -284,18 +284,6 @@ int select_energy_cpu(struct task_struct *p, int prev_cpu, int sd_flag)
 
 	if (!sched_feat(ENERGY_AWARE))
 		return -1;
-
-	/*
-	 * Energy-aware wakeup placement on overutilized cpu is hard to get
-	 * energy gain.
-	 */
-	rcu_read_lock();
-	sd = rcu_dereference_sched(cpu_rq(prev_cpu)->sd);
-	if (!sd || sd->shared->overutilized) {
-		rcu_read_unlock();
-		return -1;
-	}
-	rcu_read_unlock();
 
 	/*
 	 * We cannot do energy-aware wakeup placement sensibly for tasks
