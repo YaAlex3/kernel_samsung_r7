@@ -135,9 +135,13 @@ select_prefer_cpu(struct task_struct *p, int coregroup_count, struct cpumask *pr
 			unsigned long wake_util;
 			unsigned long new_util;
 
+			if (cpu_rq(cpu)->curr->sched_class == &rt_sched_class)
+				continue;
+
 			capacity_orig = capacity_orig_of(cpu);
 			wake_util = cpu_util_wake(cpu, p);
 			new_util = wake_util + tsk_util;
+			new_util += cpu_rq(cpu)->rt.avg.util_avg;
 
 			/* Skip over-capacity cpu */
 			if (capacity_orig < new_util)

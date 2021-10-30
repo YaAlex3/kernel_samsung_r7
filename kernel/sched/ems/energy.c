@@ -98,6 +98,8 @@ unsigned int calculate_energy(struct task_struct *p, int target_cpu)
 
 		if (unlikely(cpu == target_cpu))
 			util[cpu] += task_util_est(p);
+
+		util[cpu] += cpu_rq(cpu)->rt.avg.util_avg;
 	}
 
 	for_each_cpu(cpu, cpu_active_mask) {
@@ -194,7 +196,8 @@ static void find_min_util_cpu(struct cpu_env *cenv, struct cpumask *mask,
 		unsigned long capacity_orig = capacity_orig_of(cpu);
 		unsigned long new_util = cpu_util_wake(cpu, p) + task_util_est(p);
 
-		new_util = max(new_util, boosted_task_util(p));
+		util += cpu_rq(cpu)->rt.avg.util_avg;
+
 		/* Skip over-capacity cpu */
 		if (new_util > capacity_orig)
 			continue;
