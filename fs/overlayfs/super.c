@@ -21,6 +21,9 @@
 #include <linux/seq_file.h>
 #include <linux/posix_acl_xattr.h>
 #include "overlayfs.h"
+#ifdef CONFIG_RKP_NS_PROT
+#include <linux/kdp.h>
+#endif
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
 MODULE_DESCRIPTION("Overlay filesystem");
@@ -1275,7 +1278,11 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_put_lowerpath;
 		}
 		/* Don't inherit atime flags */
+#ifdef CONFIG_RKP_NS_PROT
+		rkp_reset_mnt_flags(ufs->upper_mnt, (MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME));
+#else
 		ufs->upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
+#endif
 
 		sb->s_time_gran = ufs->upper_mnt->mnt_sb->s_time_gran;
 

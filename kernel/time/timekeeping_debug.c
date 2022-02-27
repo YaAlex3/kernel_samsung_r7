@@ -20,6 +20,9 @@
 #include <linux/kernel.h>
 #include <linux/seq_file.h>
 #include <linux/time.h>
+#ifdef CONFIG_SEC_PM_DEBUG
+#include <linux/sec_pm_debug.h>
+#endif /* CONFIG_SEC_PM_DEBUG */
 
 #include "timekeeping_internal.h"
 
@@ -77,5 +80,9 @@ void tk_debug_account_sleep_time(struct timespec64 *t)
 	sleep_time_bin[bin]++;
 	printk_deferred(KERN_INFO "Suspended for %lld.%03lu seconds\n",
 			(s64)t->tv_sec, t->tv_nsec / NSEC_PER_MSEC);
+#ifdef CONFIG_SEC_PM_DEBUG
+	sleep_time_sec += t->tv_sec;
+	sleep_count++;
+#endif /* CONFIG_SEC_PM_DEBUG */
 }
 

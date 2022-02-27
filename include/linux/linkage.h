@@ -83,6 +83,21 @@
 	.globl name ASM_NL \
 	ALIGN ASM_NL \
 	name:
+
+#ifdef CONFIG_RKP_CFP_JOPP
+#define NOP_ENTRY(name) \
+	.globl name ASM_NL \
+	nop; \
+	ALIGN ASM_NL \
+	name :
+
+/*
+ * Fallthrough won't work anymore once you start putting MAGIC in ENTRY(...).
+ */
+#define FALLTHROUGH(target) \
+	b target
+
+#endif /* CONFIG_RKP_CFP_JOPP */
 #endif
 #endif /* LINKER_SCRIPT */
 

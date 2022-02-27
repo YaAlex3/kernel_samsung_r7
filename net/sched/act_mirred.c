@@ -82,6 +82,7 @@ static int tcf_mirred_init(struct net *net, struct nlattr *nla,
 	switch (parm->eaction) {
 	case TCA_EGRESS_MIRROR:
 	case TCA_EGRESS_REDIR:
+	case TCA_INGRESS_REDIR:
 		break;
 	default:
 		if (exists)
@@ -155,7 +156,7 @@ static int tcf_mirred(struct sk_buff *skb, const struct tc_action *a,
 	struct tcf_mirred *m = to_mirred(a);
 	struct net_device *dev;
 	struct sk_buff *skb2;
-	int retval, err;
+	int retval, err = 1;
 	u32 at;
 
 	tcf_lastuse_update(&m->tcf_tm);
@@ -180,18 +181,26 @@ static int tcf_mirred(struct sk_buff *skb, const struct tc_action *a,
 	if (!skb2)
 		goto out;
 
-	if (!(at & AT_EGRESS)) {
-		if (m->tcfm_ok_push)
-			skb_push_rcsum(skb2, skb->mac_len);
+	if (m->tcfm_eaction == TCA_INGRESS_REDIR) {
+			skb2->dev = dev;
+			skb2->skb_iif = skb2->dev->ifindex;
+			skb2->pkt_type = PACKET_HOST;
+			netif_rx(skb2);
+	} else {
+		at = G_TC_AT(skb->tc_verd);
+		if (!(at & AT_EGRESS)) {
+			if (m->tcfm_ok_push)
+				skb_push_rcsum(skb2, skb->mac_len);
+		}
+
+		/* mirror is always swallowed */
+		if (m->tcfm_eaction != TCA_EGRESS_MIRROR)
+			skb2->tc_verd = SET_TC_FROM(skb2->tc_verd, at);
+
+		skb2->skb_iif = skb->dev->ifindex;
+		skb2->dev = dev;
+		err = dev_queue_xmit(skb2);
 	}
-
-	/* mirror is always swallowed */
-	if (m->tcfm_eaction != TCA_EGRESS_MIRROR)
-		skb2->tc_verd = SET_TC_FROM(skb2->tc_verd, at);
-
-	skb2->skb_iif = skb->dev->ifindex;
-	skb2->dev = dev;
-	err = dev_queue_xmit(skb2);
 
 	if (err) {
 out:

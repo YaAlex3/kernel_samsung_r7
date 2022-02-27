@@ -31,6 +31,7 @@
 #include <linux/compiler.h>
 #include <linux/moduleparam.h>
 #include <linux/wakeup_reason.h>
+#include <linux/cpumask.h>
 
 #include "power.h"
 
@@ -46,6 +47,18 @@ static DECLARE_WAIT_QUEUE_HEAD(suspend_freeze_wait_head);
 
 enum freeze_state __read_mostly suspend_freeze_state;
 static DEFINE_SPINLOCK(suspend_freeze_lock);
+
+static struct cpumask fast_cpu_mask;
+static struct cpumask backup_cpu_mask;
+
+static void init_pm_cpumask(void)
+{
+	int i;
+	cpumask_clear(&fast_cpu_mask);
+	for (i = 4; i < nr_cpu_ids; i++) {
+		cpumask_set_cpu(i, &fast_cpu_mask);
+	}
+}
 
 void freeze_set_ops(const struct platform_freeze_ops *ops)
 {
@@ -127,6 +140,7 @@ void __init pm_states_init(void)
 	 * initialize pm_states accordingly here
 	 */
 	pm_states[PM_SUSPEND_FREEZE] = pm_labels[relative_states ? 0 : 2];
+	init_pm_cpumask();
 }
 
 static int __init sleep_states_setup(char *str)
@@ -289,6 +303,19 @@ static int suspend_prepare(suspend_state_t state)
 		goto Finish;
 	}
 
+#ifndef CONFIG_SUSPEND_SKIP_SYNC
+	trace_suspend_resume(TPS("sync_filesystems"), 0, true);
+	pr_info("PM: Syncing filesystems ... ");
+	if (intr_sync(NULL)) {
+		printk("canceled.\n");
+		trace_suspend_resume(TPS("sync_filesystems"), 0, false);
+		error = -EBUSY;
+		goto Finish;
+	}
+	pr_cont("done.\n");
+	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
+#endif
+
 	trace_suspend_resume(TPS("freeze_processes"), 0, true);
 	error = suspend_freeze_processes();
 	trace_suspend_resume(TPS("freeze_processes"), 0, false);
@@ -406,6 +433,8 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
  Enable_cpus:
 	enable_nonboot_cpus();
+	cpumask_copy(&backup_cpu_mask, &current->cpus_allowed);
+	set_cpus_allowed_ptr(current, &fast_cpu_mask);
 
  Platform_wake:
 	platform_resume_noirq(state);
@@ -464,6 +493,11 @@ int suspend_devices_and_enter(suspend_state_t state)
 
  Close:
 	platform_resume_end(state);
+	if (!cpumask_empty(&backup_cpu_mask)) {
+		cpumask_copy(&current->cpus_allowed, &backup_cpu_mask);
+		cpumask_clear(&backup_cpu_mask);
+	}
+
 	return error;
 
  Recover_platform:
@@ -512,14 +546,6 @@ static int enter_state(suspend_state_t state)
 
 	if (state == PM_SUSPEND_FREEZE)
 		freeze_begin();
-
-#ifndef CONFIG_SUSPEND_SKIP_SYNC
-	trace_suspend_resume(TPS("sync_filesystems"), 0, true);
-	pr_info("PM: Syncing filesystems ... ");
-	sys_sync();
-	pr_cont("done.\n");
-	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
-#endif
 
 	pr_debug("PM: Preparing system for sleep (%s)\n", pm_states[state]);
 	pm_suspend_clear_flags();

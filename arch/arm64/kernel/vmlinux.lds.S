@@ -146,6 +146,51 @@ SECTIONS
 		*(.got)			/* Global offset table		*/
 	}
 
+#ifdef CONFIG_UH_RKP
+	. = ALIGN(PAGE_SIZE);
+	.rkp.bitmap : {
+		rkp_pgt_bitmap = .;
+		*(.rkp.bitmap)
+	}
+	. = ALIGN(PAGE_SIZE);
+	.rkp.dblmap : {
+		rkp_map_bitmap = .;
+		*(.rkp.dblmap)
+	}
+#ifdef CONFIG_RKP_KDP
+	. = ALIGN(PAGE_SIZE);
+	 /* Creating a new section to store task credentials */
+	.rkp.prot.page : {
+		__rkp_start_prot_page = .;
+	}
+	__rkp_end_prot_page = .;
+#endif /* CONFIG_RKP_KDP*/
+	. = ALIGN(PAGE_SIZE);
+	.empty_zero_page :{
+		*(.empty_zero_page)
+	}
+	. = ALIGN(PAGE_SIZE);
+	bm_pte = .;
+	. += PAGE_SIZE;
+	bm_pmd = .;
+	. += PAGE_SIZE;
+	bm_pud = .;
+	. += PAGE_SIZE;
+	idmap_pg_dir = .;
+	. += IDMAP_DIR_SIZE;
+	swapper_pg_dir = .;
+	. += SWAPPER_DIR_SIZE;
+
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+	reserved_ttbr0 = .;
+	. += RESERVED_TTBR0_SIZE;
+#endif
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+	tramp_pg_dir = .;
+	. += PAGE_SIZE;
+#endif
+#endif
+
 	. = ALIGN(SEGMENT_ALIGN);
 	_etext = .;			/* End of text section */
 
@@ -223,6 +268,7 @@ SECTIONS
 	BSS_SECTION(0, 0, 0)
 
 	. = ALIGN(PAGE_SIZE);
+#ifndef CONFIG_UH_RKP
 	idmap_pg_dir = .;
 	. += IDMAP_DIR_SIZE;
 	swapper_pg_dir = .;
@@ -232,12 +278,11 @@ SECTIONS
 	reserved_ttbr0 = .;
 	. += RESERVED_TTBR0_SIZE;
 #endif
-
 #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
 	tramp_pg_dir = .;
 	. += PAGE_SIZE;
 #endif
-
+#endif
 	_end = .;
 
 	STABS_DEBUG

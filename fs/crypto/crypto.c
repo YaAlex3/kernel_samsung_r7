@@ -30,6 +30,10 @@
 #include <crypto/skcipher.h>
 #include "fscrypt_private.h"
 
+#ifdef CONFIG_FSCRYPT_SDP
+#include "sdp/sdp_crypto.h"
+#endif
+
 static unsigned int num_prealloc_crypto_pages = 32;
 static unsigned int num_prealloc_crypto_ctxs = 128;
 
@@ -103,6 +107,9 @@ struct fscrypt_ctx *fscrypt_get_ctx(const struct inode *inode, gfp_t gfp_flags)
 
 	if (ci == NULL)
 		return ERR_PTR(-ENOKEY);
+
+	if (__fscrypt_disk_encrypted(inode))
+		return NULL;
 
 	/*
 	 * We first try getting the ctx from a free list because in
@@ -194,11 +201,22 @@ int fscrypt_do_page_crypto(const struct inode *inode, fscrypt_direction_t rw,
 struct page *fscrypt_alloc_bounce_page(struct fscrypt_ctx *ctx,
 				       gfp_t gfp_flags)
 {
-	ctx->w.bounce_page = mempool_alloc(fscrypt_bounce_page_pool, gfp_flags);
-	if (ctx->w.bounce_page == NULL)
+	void *pool = mempool_alloc(fscrypt_bounce_page_pool, gfp_flags);
+
+	if (pool == NULL)
 		return ERR_PTR(-ENOMEM);
-	ctx->flags |= FS_CTX_HAS_BOUNCE_BUFFER_FL;
-	return ctx->w.bounce_page;
+
+	if (ctx) {
+		ctx->w.bounce_page = pool;
+		ctx->flags |= FS_CTX_HAS_BOUNCE_BUFFER_FL;
+	}
+
+	return pool;
+}
+
+void fscrypt_free_bounce_page(void *pool)
+{
+	mempool_free(pool, fscrypt_bounce_page_pool);
 }
 
 /**
@@ -244,6 +262,13 @@ struct page *fscrypt_encrypt_page(const struct inode *inode,
 	int err;
 
 	BUG_ON(len % FS_CRYPTO_BLOCK_SIZE != 0);
+
+#ifdef CONFIG_DDAR
+	if (fscrypt_dd_encrypted_inode(inode)) {
+		// Invert crypto order. OEM crypto must perform after 3rd party crypto
+		return NULL;
+	}
+#endif
 
 	if (inode->i_sb->s_cop->flags & FS_CFLG_OWN_PAGES) {
 		/* with inplace-encryption we just encrypt the page */
@@ -307,6 +332,13 @@ int fscrypt_decrypt_page(const struct inode *inode, struct page *page,
 	if (!(inode->i_sb->s_cop->flags & FS_CFLG_OWN_PAGES))
 		BUG_ON(!PageLocked(page));
 
+#ifdef CONFIG_DDAR
+	if (fscrypt_dd_encrypted_inode(inode)) {
+		// Invert crypto order. OEM crypto must perform after 3rd party crypto
+		return 0;
+	}
+#endif
+
 	return fscrypt_do_page_crypto(inode, FS_DECRYPT, lblk_num, page, page,
 				      len, offs, GFP_NOFS);
 }
@@ -353,9 +385,17 @@ static int fscrypt_d_revalidate(struct dentry *dentry, unsigned int flags)
 		return 0;
 	return 1;
 }
-
+#ifdef CONFIG_FSCRYPT_SDP
+static int fscrypt_sdp_d_delete(const struct dentry *dentry)
+{
+	return fscrypt_sdp_d_delete_wrapper(dentry);
+}
+#endif
 const struct dentry_operations fscrypt_d_ops = {
 	.d_revalidate = fscrypt_d_revalidate,
+#ifdef CONFIG_FSCRYPT_SDP
+	.d_delete     = fscrypt_sdp_d_delete,
+#endif
 };
 
 void fscrypt_restore_control_page(struct page *page)
@@ -472,9 +512,15 @@ static int __init fscrypt_init(void)
 	fscrypt_info_cachep = KMEM_CACHE(fscrypt_info, SLAB_RECLAIM_ACCOUNT);
 	if (!fscrypt_info_cachep)
 		goto fail_free_ctx;
+#ifdef CONFIG_FSCRYPT_SDP
+	sdp_crypto_init();
+	if (!fscrypt_sdp_init_sdp_info_cachep())
+		goto fail_free_info;
+#endif
 
 	return 0;
-
+fail_free_info:
+	kmem_cache_destroy(fscrypt_info_cachep);
 fail_free_ctx:
 	kmem_cache_destroy(fscrypt_ctx_cachep);
 fail_free_queue:
@@ -495,7 +541,10 @@ static void __exit fscrypt_exit(void)
 		destroy_workqueue(fscrypt_read_workqueue);
 	kmem_cache_destroy(fscrypt_ctx_cachep);
 	kmem_cache_destroy(fscrypt_info_cachep);
-
+#ifdef CONFIG_FSCRYPT_SDP
+	sdp_crypto_exit();
+	fscrypt_sdp_release_sdp_info_cachep();
+#endif
 	fscrypt_essiv_cleanup();
 }
 module_exit(fscrypt_exit);

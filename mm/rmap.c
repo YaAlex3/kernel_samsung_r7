@@ -1460,6 +1460,10 @@ void page_remove_rmap(struct page *page, bool compound)
 	 */
 }
 
+#ifdef CONFIG_RKP_DMAP_PROT
+extern void dmap_prot(u64 addr,u64 order,u64 val);
+#endif
+
 struct rmap_private {
 	enum ttu_flags flags;
 	int lazyfreed;
@@ -1577,6 +1581,9 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		goto out_unmap;
 	}
 
+#ifdef CONFIG_RKP_DMAP_PROT
+	dmap_prot((u64)page_to_phys(page),(u64)compound_order(page),0);
+#endif
 	/* Nuke the page table entry. */
 	flush_cache_page(vma, address, page_to_pfn(page));
 	if (should_defer_flush(mm, flags)) {
@@ -1607,6 +1614,9 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		} else {
 			dec_mm_counter(mm, mm_counter(page));
 		}
+#ifdef CONFIG_RKP_DMAP_PROT
+		dmap_prot((u64)pte_val(swp_entry_to_pte(make_hwpoison_entry(page))),0,0);
+#endif
 		set_pte_at(mm, address, pte,
 			   swp_entry_to_pte(make_hwpoison_entry(page)));
 	} else if (pte_unused(pteval)) {
@@ -1628,6 +1638,9 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		swp_pte = swp_entry_to_pte(entry);
 		if (pte_soft_dirty(pteval))
 			swp_pte = pte_swp_mksoft_dirty(swp_pte);
+#ifdef CONFIG_RKP_DMAP_PROT
+		dmap_prot((u64)pte_val(swp_pte),0,0);
+#endif
 		set_pte_at(mm, address, pte, swp_pte);
 	} else if (PageAnon(page)) {
 		swp_entry_t entry = { .val = page_private(page) };
@@ -1646,6 +1659,9 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		}
 
 		if (swap_duplicate(entry) < 0) {
+#ifdef CONFIG_RKP_DMAP_PROT
+			dmap_prot((u64)pte_val(pteval),0,0);
+#endif
 			set_pte_at(mm, address, pte, pteval);
 			ret = SWAP_FAIL;
 			goto out_unmap;
@@ -1661,6 +1677,9 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		swp_pte = swp_entry_to_pte(entry);
 		if (pte_soft_dirty(pteval))
 			swp_pte = pte_swp_mksoft_dirty(swp_pte);
+#ifdef CONFIG_RKP_DMAP_PROT
+		dmap_prot((u64)pte_val(swp_pte),0,0);
+#endif
 		set_pte_at(mm, address, pte, swp_pte);
 	} else
 		dec_mm_counter(mm, mm_counter_file(page));
@@ -1708,6 +1727,7 @@ static int page_mapcount_is_zero(struct page *page)
  * try_to_unmap - try to remove all page table mappings to a page
  * @page: the page to get unmapped
  * @flags: action and flags
+ * @vma : target vma for reclaim
  *
  * Tries to remove all the page table entries which are mapping this
  * page, used in the pageout path.  Caller must hold the page lock.
@@ -1717,8 +1737,10 @@ static int page_mapcount_is_zero(struct page *page)
  * SWAP_AGAIN	- we missed a mapping, try again later
  * SWAP_FAIL	- the page is unswappable
  * SWAP_MLOCK	- page is mlocked.
+ * If @vma is not NULL, this function try to remove @page from only @vma
+ * without peeking all mapped vma for @page.
  */
-int try_to_unmap(struct page *page, enum ttu_flags flags)
+int try_to_unmap(struct page *page, enum ttu_flags flags, struct vm_area_struct *vma)
 {
 	int ret;
 	struct rmap_private rp = {
@@ -1731,6 +1753,7 @@ int try_to_unmap(struct page *page, enum ttu_flags flags)
 		.arg = &rp,
 		.done = page_mapcount_is_zero,
 		.anon_lock = page_lock_anon_vma_read,
+		.target_vma = vma,
 	};
 
 	/*
@@ -1790,6 +1813,7 @@ int try_to_munlock(struct page *page)
 		.arg = &rp,
 		.done = page_not_mapped,
 		.anon_lock = page_lock_anon_vma_read,
+		.target_vma = NULL,
 
 	};
 
@@ -1852,6 +1876,11 @@ static int rmap_walk_anon(struct page *page, struct rmap_walk_control *rwc,
 	struct anon_vma_chain *avc;
 	int ret = SWAP_AGAIN;
 
+	if (rwc->target_vma) {
+		unsigned long address = vma_address(page, rwc->target_vma);
+		return rwc->rmap_one(page, rwc->target_vma, address, rwc->arg);
+	}
+
 	if (locked) {
 		anon_vma = page_anon_vma(page);
 		/* anon_vma disappear under us? */
@@ -1903,6 +1932,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc,
 	struct address_space *mapping = page_mapping(page);
 	pgoff_t pgoff;
 	struct vm_area_struct *vma;
+	unsigned long address;
 	int ret = SWAP_AGAIN;
 
 	/*
@@ -1919,6 +1949,13 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc,
 	pgoff = page_to_pgoff(page);
 	if (!locked)
 		i_mmap_lock_read(mapping);
+
+	if (rwc->target_vma) {
+		address = vma_address(page, rwc->target_vma);
+		ret = rwc->rmap_one(page, rwc->target_vma, address, rwc->arg);
+		goto done;
+	}
+
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
 		unsigned long address = vma_address(page, vma);
 

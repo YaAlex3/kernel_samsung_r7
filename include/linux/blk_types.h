@@ -33,6 +33,7 @@ struct bio {
 						 */
 	unsigned short		bi_flags;	/* status, command, etc */
 	unsigned short		bi_ioprio;
+	unsigned short		bi_sec_flags;	/* SEC only */
 
 	struct bvec_iter	bi_iter;
 
@@ -53,6 +54,8 @@ struct bio {
 	bio_end_io_t		*bi_end_io;
 
 	void			*bi_private;
+	void			*bi_aux_private;
+
 #ifdef CONFIG_BLK_CGROUP
 	/*
 	 * Optional ioc and css associated with this bio.  Put on bio
@@ -80,6 +83,10 @@ struct bio {
 	struct bio_vec		*bi_io_vec;	/* the actual vec list */
 
 	struct bio_set		*bi_pool;
+
+#ifdef CONFIG_DDAR
+	struct inode		*bi_dio_inode;
+#endif
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
@@ -145,6 +152,9 @@ struct bio {
 
 #endif /* CONFIG_BLOCK */
 
+#define __SEC_BYPASS	(0)
+#define SEC_BYPASS	(1ULL << __SEC_BYPASS)
+
 /*
  * Request flags.  For use in the cmd_flags field of struct request, and in
  * bi_opf of struct bio.  Note that some flags are only valid in either one.
@@ -163,6 +173,7 @@ enum rq_flag_bits {
 	__REQ_INTEGRITY,	/* I/O includes block integrity payload */
 	__REQ_FUA,		/* forced unit access */
 	__REQ_PREFLUSH,		/* request for cache flush */
+	__REQ_CRYPT,		/* request inline crypt */
 
 	/* bio only flags */
 	__REQ_RAHEAD,		/* read ahead, can fail anytime */
@@ -218,6 +229,7 @@ enum rq_flag_bits {
 
 #define REQ_SORTED		(1ULL << __REQ_SORTED)
 #define REQ_SOFTBARRIER		(1ULL << __REQ_SOFTBARRIER)
+#define REQ_CRYPT		(1ULL << __REQ_CRYPT)
 #define REQ_FUA			(1ULL << __REQ_FUA)
 #define REQ_NOMERGE		(1ULL << __REQ_NOMERGE)
 #define REQ_STARTED		(1ULL << __REQ_STARTED)

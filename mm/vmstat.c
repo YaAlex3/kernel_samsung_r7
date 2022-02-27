@@ -946,6 +946,7 @@ const char * const vmstat_text[] = {
 	"numa_other",
 #endif
 	"nr_free_cma",
+	"nr_free_rbin",
 
 	/* Node-based counters */
 	"nr_inactive_anon",
@@ -1085,6 +1086,12 @@ const char * const vmstat_text[] = {
 #ifdef CONFIG_DEBUG_VM_VMACACHE
 	"vmacache_find_calls",
 	"vmacache_find_hits",
+#endif
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
+	"sqzr_objcnt",
+	"sqzr_count",
+	"sqzr_read",
+	"sqzr_write",
 #endif
 #endif /* CONFIG_VM_EVENTS_COUNTERS */
 };

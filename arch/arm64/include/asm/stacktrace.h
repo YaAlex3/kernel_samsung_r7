@@ -31,4 +31,6 @@ extern int unwind_frame(struct task_struct *tsk, struct stackframe *frame);
 extern void walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
 			    int (*fn)(struct stackframe *, void *), void *data);
 
+DECLARE_PER_CPU(unsigned long *, irq_stack_ptr);
+
 #endif	/* __ASM_STACKTRACE_H */

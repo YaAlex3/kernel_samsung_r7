@@ -13,6 +13,10 @@
 #include <linux/delay.h>
 #include <linux/export.h>
 
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/sec_debug.h>
+#endif
+
 void __raw_spin_lock_init(raw_spinlock_t *lock, const char *name,
 			  struct lock_class_key *key)
 {
@@ -65,6 +69,9 @@ static void spin_dump(raw_spinlock_t *lock, const char *msg)
 		owner ? task_pid_nr(owner) : -1,
 		lock->owner_cpu);
 	dump_stack();
+#ifdef CONFIG_SEC_DEBUG_SPINBUG_PANIC
+	BUG();
+#endif
 }
 
 static void spin_bug(raw_spinlock_t *lock, const char *msg)
@@ -144,6 +151,9 @@ static void rwlock_bug(rwlock_t *lock, const char *msg)
 		msg, raw_smp_processor_id(), current->comm,
 		task_pid_nr(current), lock);
 	dump_stack();
+#ifdef CONFIG_SEC_DEBUG_SPINBUG_PANIC
+	BUG();
+#endif
 }
 
 #define RWLOCK_BUG_ON(cond, lock, msg) if (unlikely(cond)) rwlock_bug(lock, msg)

@@ -46,6 +46,10 @@
 #include <linux/bug.h>
 #include <linux/sched.h>
 
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/sec_debug.h>
+#endif
+
 extern const struct bug_entry __start___bug_table[], __stop___bug_table[];
 
 static inline unsigned long bug_addr(const struct bug_entry *bug)
@@ -173,6 +177,11 @@ enum bug_trap_type report_bug(unsigned long bugaddr, struct pt_regs *regs)
 	}
 
 	printk(KERN_DEFAULT "------------[ cut here ]------------\n");
+
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+	if (file)
+		sec_debug_set_extra_info_bug(file, line);
+#endif
 
 	if (file)
 		pr_crit("kernel BUG at %s:%u!\n", file, line);

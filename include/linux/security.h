@@ -56,6 +56,12 @@ struct xattr;
 struct xfrm_sec_ctx;
 struct mm_struct;
 
+#ifdef CONFIG_RKP_KDP
+/* For understanding size of struct cred*/
+#include <linux/rkp.h>
+#include <linux/kdp.h>
+#endif
+
 /* If capable should audit the security request */
 #define SECURITY_CAP_NOAUDIT 0
 #define SECURITY_CAP_AUDIT 1
@@ -67,6 +73,12 @@ struct ctl_table;
 struct audit_krule;
 struct user_namespace;
 struct timezone;
+
+#ifndef CONFIG_RKP_KDP
+#define RKP_RO_AREA __attribute__((section (".rkp.prot.page")))
+#else
+#define RKP_RO_AREA   
+#endif /*CONFIG_RKP_KDP*/
 
 /* These functions are in security/commoncap.c */
 extern int cap_capable(const struct cred *cred, struct user_namespace *ns,

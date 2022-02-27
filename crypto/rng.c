@@ -15,6 +15,9 @@
 
 #include <linux/atomic.h>
 #include <crypto/internal/rng.h>
+#ifdef CONFIG_CRYPTO_FIPS
+#include <crypto/drbg.h>
+#endif
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -23,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/cryptouser.h>
+#include <linux/compiler.h>
 #include <net/netlink.h>
 
 #include "internal.h"
@@ -95,7 +99,7 @@ static int crypto_rng_report(struct sk_buff *skb, struct crypto_alg *alg)
 #endif
 
 static void crypto_rng_show(struct seq_file *m, struct crypto_alg *alg)
-	__attribute__ ((unused));
+	__maybe_unused;
 static void crypto_rng_show(struct seq_file *m, struct crypto_alg *alg)
 {
 	seq_printf(m, "type         : rng\n");
@@ -231,6 +235,29 @@ void crypto_unregister_rngs(struct rng_alg *algs, int count)
 		crypto_unregister_rng(algs + i);
 }
 EXPORT_SYMBOL_GPL(crypto_unregister_rngs);
+
+#ifdef CONFIG_CRYPTO_FIPS
+int crypto_rng_check_entropy(struct crypto_rng *rng)
+{
+	struct drbg_state *drbg;
+	const char *algo = NULL;
+
+	if (!rng)
+		return -EINVAL;
+
+	algo = crypto_tfm_alg_driver_name(crypto_rng_tfm(rng));
+	if (!algo)
+		return -EINVAL;
+
+	if (!memcmp(algo, "drbg_", 5)) {
+		drbg = crypto_rng_ctx(rng);
+		if (drbg->hw_entropy)
+			return 0;
+	}
+	return -1;
+}
+EXPORT_SYMBOL_GPL(crypto_rng_check_entropy);
+#endif
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Random Number Generator");

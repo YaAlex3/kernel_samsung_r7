@@ -33,6 +33,7 @@
 #include <asm/mmu.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
+#include <asm/processor.h>
 #include <asm/thread_info.h>
 #include <asm/uaccess.h>
 #include <asm/asm-uaccess.h>
@@ -65,6 +66,10 @@
 #endif
 	.endm
 
+#ifdef CONFIG_SEC_DEBUG_EXCEPTION_STACK
+#define PRESERVE_STACK_SIZE	256
+#endif
+
 /*
  * Bad Abort numbers
  *-----------------
@@ -89,7 +94,15 @@ alternative_if ARM64_UNMAP_KERNEL_AT_EL0
 alternative_else_nop_endif
 #endif
 
+#ifdef CONFIG_SEC_DEBUG_EXCEPTION_STACK
+	.if	\el == 0
 	sub	sp, sp, #S_FRAME_SIZE
+	.else
+	sub	sp, sp, #(S_FRAME_SIZE+PRESERVE_STACK_SIZE)
+	.endif /* \el == 0 */
+#else
+	sub	sp, sp, #S_FRAME_SIZE
+#endif
 	b	el\()\el\()_\label
 	.endm
 
@@ -153,7 +166,11 @@ alternative_cb_end
 
 	mov	x29, xzr			// fp pointed to user-space
 	.else
+#ifdef CONFIG_SEC_DEBUG_EXCEPTION_STACK
+	add	x21, sp, #(S_FRAME_SIZE+PRESERVE_STACK_SIZE)
+#else
 	add	x21, sp, #S_FRAME_SIZE
+#endif
 	get_thread_info tsk
 	/* Save the task's original addr_limit and set USER_DS */
 	ldr	x20, [tsk, #TSK_TI_ADDR_LIMIT]
@@ -301,7 +318,15 @@ alternative_else_nop_endif
 	ldp	x26, x27, [sp, #16 * 13]
 	ldp	x28, x29, [sp, #16 * 14]
 	ldr	lr, [sp, #S_LR]
+#ifdef CONFIG_SEC_DEBUG_EXCEPTION_STACK
+	.if	\el == 0
 	add	sp, sp, #S_FRAME_SIZE		// restore sp
+	.else
+	add	sp, sp, #(S_FRAME_SIZE+PRESERVE_STACK_SIZE)
+	.endif /* \el == 0 */
+#else
+	add	sp, sp, #S_FRAME_SIZE		// restore sp
+#endif
 
 	.if	\el == 0
 alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
@@ -474,7 +499,74 @@ ENDPROC(el1_error_invalid)
  */
 	.align	6
 el1_sync:
+	stp	x0, x1, [sp, #-0x10]!
+	mrs	x0, esr_el1
+/* get Exeption Class */
+	lsr	x0, x0, #0x1A
+/* check data abort fault */
+	cmp	x0, #0x25
+	b.ne	1f
+/* check branch instruction */
+	mrs	x0, elr_el1
+
+	ldr	x0, [x0]
+	lsr	x0, x0, #0x19
+	and	x0, x0, #0x7f
+	cmp	x0, #0x2a
+	b.ne	1f
+/* halt for watchdog */
+	hlt	#0xff
+1:
+	ldp	x0, x1, [sp]
+	add	sp, sp, #0x10
+
+/* store used gprs(x0, x1) through stack */
+	stp     x0, x1, [sp, #-0x10]!
+	mrs     x0, esr_el1
+	mov	x1, #0x30
+	movk	x1, #0x9600, lsl #0x10
+	cmp     x0, x1
+	b.eq    96f
+	movk	x1, #0x9400, lsl #0x10
+	cmp     x0, x1
+	b.eq    96f
+	movk	x1, #0x8600, lsl #0x10
+	cmp     x0, x1
+	b.eq    86f
+	movk	x1, #0x8400, lsl #0x10
+	cmp     x0, x1
+	b.eq    86f
+	mov	x1, #0x70
+	movk	x1, #0x9600, lsl #0x10
+	cmp     x0, x1
+	b.eq    96f
+	movk	x1, #0x9400, lsl #0x10
+	cmp     x0, x1
+	b.eq    96f
+	b	skip
+96:
+86:
+/* recovery tlb confilict */
+	dsb     sy
+	tlbi    vmalle1is
+	dsb     sy
+
+/* Add count for recovery count */
+	ldr_l   x0, __tlb_conflict_cnt
+	add     x0, x0, #1
+	cmp     x0, #0x100
+	b.ge    skip
+	str_l   x0, __tlb_conflict_cnt, x1
+	ldp	x0, x1, [sp]
+	add	sp, sp, #0x10
 	kernel_entry 1
+	kernel_exit 1
+skip:
+	ldp	x0, x1, [sp]
+	add	sp, sp, #0x10
+	kernel_entry 1
+	mov	x9, #0
+	str_l	x9, __tlb_conflict_cnt, x8
 	mrs	x1, esr_el1			// read the syndrome register
 	lsr	x24, x1, #ESR_ELx_EC_SHIFT	// exception class
 	cmp	x24, #ESR_ELx_EC_DABT_CUR	// data abort in EL1
@@ -528,6 +620,7 @@ el1_undef:
 	 */
 	enable_dbg
 	mov	x0, sp
+	mrs	x1, esr_el1			// read the syndrome register
 	b	do_undefinstr
 el1_dbg:
 	/*
@@ -731,6 +824,7 @@ el0_undef:
 	enable_dbg_and_irq
 	ct_user_exit
 	mov	x0, sp
+	mrs	x1, esr_el1			// read the syndrome register
 	bl	do_undefinstr
 	b	ret_to_user
 el0_sys:
@@ -893,6 +987,30 @@ el0_svc_naked:					// compat entry point
 	cmp     scno, sc_nr                     // check upper syscall limit
 	b.hs	ni_sys
 	mask_nospec64 scno, sc_nr, x19	// enforce bounds for syscall number
+
+#ifdef CONFIG_SECURITY_DEFEX
+/*
+ * Defex enter hook
+ */
+
+	ldr	x16, =defex_syscall_catch_enter
+	ldr	x16, [x16]
+	cmp	x16, xzr
+	b.eq	2f
+	mov	x0, scno
+	mov	x1, sp
+	blr	x16
+
+	cbnz	w0, ret_fast_syscall		// block this syscall?
+#	adr	lr, ret_fast_syscall		// return address (not needed here)
+
+	ldp	x0, x1, [sp]			// restore the syscall args
+	ldp	x2, x3, [sp, #S_X2]
+	ldp	x4, x5, [sp, #S_X4]
+	ldp	x6, x7, [sp, #S_X6]
+
+2:
+#endif
 	ldr	x16, [stbl, scno, lsl #3]	// address in the syscall table
 	blr	x16				// call sys_* routine
 	b	ret_fast_syscall
@@ -920,6 +1038,23 @@ __sys_trace:
 	mov	x1, sp				// pointer to regs
 	cmp	scno, sc_nr			// check upper syscall limit
 	b.hs	__ni_sys_trace
+#ifdef CONFIG_SECURITY_DEFEX
+/*
+ * Defex enter hook
+ */
+
+	ldr	x16, =defex_syscall_catch_enter
+	ldr	x16, [x16]
+	cmp	x16, xzr
+	b.eq	3f
+	mov	x0, scno
+	mov	x1, sp
+	blr	x16
+
+	cbnz	w0, __sys_trace_return		// block this syscall?
+#	adr	lr, __sys_trace_return		// return address (not neede here)
+3:
+#endif
 	ldp	x0, x1, [sp]			// restore the syscall args
 	ldp	x2, x3, [sp, #S_X2]
 	ldp	x4, x5, [sp, #S_X4]
@@ -993,9 +1128,13 @@ __ni_sys_trace:
 	tramp_map_kernel	x30
 #ifdef CONFIG_RANDOMIZE_BASE
 	adr	x30, tramp_vectors + PAGE_SIZE
+#ifdef CONFIG_QCOM_FALKOR_ERRATUM_1003
+alternative_insn isb, nop, ARM64_WORKAROUND_QCOM_FALKOR_E1003
+#else
 #ifndef CONFIG_ARCH_MSM8996
 	isb
-#endif
+#endif /* CONFIG_ARCH_MSM8996 */
+#endif /*CONFIG_QCOM_FALKOR_ERRATUM_1003 */
 	ldr	x30, [x30]
 #else
 	ldr	x30, =vectors

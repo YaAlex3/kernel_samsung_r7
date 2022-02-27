@@ -24,6 +24,8 @@
 #include <linux/of_platform.h>
 #include <linux/delay.h>
 #include <linux/pm_runtime.h>
+#include <linux/wakelock.h>
+#include <linux/cpuidle.h>
 
 #include "coresight-priv.h"
 
@@ -52,6 +54,8 @@ static DEFINE_PER_CPU(struct list_head *, tracer_path);
  * for STM.
  */
 static struct list_head *stm_path;
+static struct wake_lock cs_trace_wake_lock;
+static int cs_enable_cnt = 0;
 
 static int coresight_id_match(struct device *dev, void *data)
 {
@@ -590,6 +594,11 @@ int coresight_enable(struct coresight_device *csdev)
 		ret = PTR_ERR(path);
 		goto out;
 	}
+	if (!cs_enable_cnt) {
+		wake_lock(&cs_trace_wake_lock);
+		cpuidle_pause();
+	}
+	cs_enable_cnt++;
 
 	ret = coresight_enable_path(path, CS_MODE_SYSFS);
 	if (ret)
@@ -628,6 +637,13 @@ err_source:
 
 err_path:
 	coresight_release_path(path);
+
+	cs_enable_cnt--;
+	if (!cs_enable_cnt) {
+		wake_unlock(&cs_trace_wake_lock);
+		cpuidle_resume();
+	}
+
 	goto out;
 }
 EXPORT_SYMBOL_GPL(coresight_enable);
@@ -665,6 +681,11 @@ void coresight_disable(struct coresight_device *csdev)
 	coresight_disable_path(path);
 	coresight_release_path(path);
 
+	cs_enable_cnt--;
+	if (!cs_enable_cnt) {
+		wake_unlock(&cs_trace_wake_lock);
+		cpuidle_resume();
+	}
 out:
 	mutex_unlock(&coresight_mutex);
 }
@@ -958,6 +979,8 @@ struct bus_type coresight_bustype = {
 
 static int __init coresight_init(void)
 {
+	wake_lock_init(&cs_trace_wake_lock, WAKE_LOCK_SUSPEND, "cs_hwtracing");
+
 	return bus_register(&coresight_bustype);
 }
 postcore_initcall(coresight_init);
