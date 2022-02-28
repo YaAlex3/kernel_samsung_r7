@@ -1663,7 +1663,7 @@ out:
 	return err;
 }
 
-#if defined(CONFIG_CRYPTO_DISKCIPHER) && !defined(CONFIG_EXYNOS_FMP_FIPS)
+#if 0
 static int __test_diskcipher(struct crypto_diskcipher *tfm, int enc,
 			const struct cipher_testvec *template,
 			unsigned int tcount, const int align_offset)
@@ -4361,7 +4361,7 @@ static const struct alg_test_desc alg_test_descs[] = {
 				},
 			}
 		},
-#if defined(CONFIG_CRYPTO_DISKCIPHER) && !defined(CONFIG_EXYNOS_FMP_FIPS)
+#if 0
 	}, {
 		.alg = "cbc(aes)-disk",
 		.test = alg_test_diskcipher,
@@ -4460,7 +4460,7 @@ static const struct alg_test_desc alg_test_descs[] = {
 				}
 			}
 		}
-#if defined(CONFIG_CRYPTO_DISKCIPHER) && !defined(CONFIG_EXYNOS_FMP_FIPS)
+#if 0
 	}, {
 		.alg = "xts(aes)-disk",
 		.test = alg_test_diskcipher,
