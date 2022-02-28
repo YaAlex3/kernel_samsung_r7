@@ -526,6 +526,7 @@ CLANG_FLAGS	+= --gcc-toolchain=$(GCC_TOOLCHAIN)
 endif
 KBUILD_CFLAGS	+= -Wno-sizeof-pointer-div
 CLANG_FLAGS	+= -no-integrated-as
+CLANG_FLAGS     += -fno-builtin-stpcpy
 CLANG_FLAGS	+= -Werror=unknown-warning-option
 KBUILD_CFLAGS	+= $(CLANG_FLAGS)
 KBUILD_AFLAGS	+= $(CLANG_FLAGS)
