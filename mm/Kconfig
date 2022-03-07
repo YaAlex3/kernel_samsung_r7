@@ -816,10 +816,6 @@ config MAX_DIRTY_THRESH_PAGES
 	  This value is the upper bound of VM dirty-thresh. (0 means no limit.)
 	  It is only effective when dirty_ratio is used.
 	  (Setting dirty_bytes disables this option.)
-	 Any other vaule is ignored.
-
-config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
-       def_bool n
 
 config VMSTAT_INTERVAL
 	int "Default interval in seconds to update vmstat"
