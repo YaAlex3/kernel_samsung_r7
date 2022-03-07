@@ -24,11 +24,7 @@
 
 #define SSP_DEVICE_ID		0x55
 
-#ifdef SSP_DBG
-#define ssp_dbg(format, ...) pr_info("[SSP] "format, ##__VA_ARGS__)
-#else
 #define ssp_dbg(format, ...)
-#endif
 
 #define SSP_SW_RESET_TIME		3000
 /* Sensor polling in ms */
