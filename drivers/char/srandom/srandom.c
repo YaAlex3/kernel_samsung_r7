@@ -621,22 +621,6 @@ module_exit(mod_exit);
 
 
 /*
-    Stack Guard
-*/
-unsigned long __stack_chk_guard;
-void __stack_chk_guard_setup(void)
-{
-        KTIME_GET_NS(&ts);
-        __stack_chk_guard = (uint64_t)ts.tv_nsec;
-}
-
-void __stack_chk_fail(void)
-{
-        printk(KERN_INFO "[srandom] Stack Guard check Failed!\n");
-}
-
-
-/*
  *  Module license information
  */
 MODULE_LICENSE("GPL");
