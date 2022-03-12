@@ -36,7 +36,6 @@ static struct g2d_stamp {
 	u32 job_id;
 	u32 val;
 	s32 info;
-	u8 cpu;
 } g2d_stamp_list[G2D_MAX_STAMP_SIZE];
 
 static atomic_t p_stamp;
@@ -57,8 +56,8 @@ static int g2d_stamp_show(struct seq_file *s, void *unused)
 	while (1) {
 		stamp = &g2d_stamp_list[i];
 
-		seq_printf(s, "[%4d] %u:%2u@%u (0x%2lx) %6d %06llu\n", i++,
-			stamp->cpu, stamp->job_id, stamp->val, stamp->state,
+		seq_printf(s, "[%4d] %2u@%u (0x%2lx) %6d %06llu\n", i++,
+			stamp->job_id, stamp->val, stamp->state,
 			stamp->info, ktime_to_us(stamp->time));
 
 		i &= (G2D_MAX_STAMP_SIZE - 1);
@@ -225,7 +224,6 @@ void g2d_stamp_task(struct g2d_task *task, u32 val, s32 info)
 
 	stamp->time = ktime_get();
 	stamp->val = val;
-	stamp->cpu = get_current_cpunum();
 	stamp->info = info;
 
 	if (task && (stamp->val == G2D_STAMP_STATE_DONE)) {

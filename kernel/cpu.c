@@ -976,7 +976,6 @@ static int takedown_cpu(unsigned int cpu)
 	__cpu_die(cpu);
 
 	tick_cleanup_dead_cpu(cpu);
-	rcutree_migrate_callbacks(cpu);
 	return 0;
 }
 
@@ -1517,8 +1516,6 @@ static int _cpus_up(const struct cpumask *cpus, int tasks_frozen, enum cpuhp_sta
 		set_cpu_active(cpu, true);
 	}
 
-	cpuset_cpu_active();
-
 	for_each_cpu(cpu, &bringup_cpus) {
 		struct rq *rq = cpu_rq(cpu);
 		struct cpuhp_cpu_state *st = per_cpu_ptr(&cpuhp_state, cpu);
@@ -1526,7 +1523,6 @@ static int _cpus_up(const struct cpumask *cpus, int tasks_frozen, enum cpuhp_sta
 		raw_spin_lock_irqsave(&rq->lock, flags);
 		if (rq->rd) {
 			BUG_ON(!cpumask_test_cpu(cpu, rq->rd->span));
-			set_rq_online(rq);
 		}
 		raw_spin_unlock_irqrestore(&rq->lock, flags);
 

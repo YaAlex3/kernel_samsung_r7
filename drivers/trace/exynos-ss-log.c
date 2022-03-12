@@ -693,7 +693,7 @@ void exynos_ss_work(void *worker, void *v_task, void *fn, int en)
 		return;
 
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.work_log_idx[cpu]) &
 					(ARRAY_SIZE(ess_log->work[0]) - 1);
 		struct task_struct *task = (struct task_struct *)v_task;
@@ -713,7 +713,7 @@ void exynos_ss_cpuidle(char *modes, unsigned state, int diff, int en)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.cpuidle_log_idx[cpu]) &
 				(ARRAY_SIZE(ess_log->cpuidle[0]) - 1);
 
@@ -734,7 +734,7 @@ void exynos_ss_suspend(void *fn, void *dev, int en)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.suspend_log_idx) &
 				(ARRAY_SIZE(ess_log->suspend) - 1);
 
@@ -866,7 +866,7 @@ void exynos_ss_regulator(unsigned long long timestamp, char* f_name, unsigned in
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.regulator_log_idx) &
 				(ARRAY_SIZE(ess_log->regulator) - 1);
 		int size = strlen(f_name);
@@ -892,7 +892,7 @@ void exynos_ss_thermal(void *data, unsigned int temp, char *name, unsigned int m
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.thermal_log_idx) &
 				(ARRAY_SIZE(ess_log->thermal) - 1);
 
@@ -916,7 +916,7 @@ void exynos_ss_irq(int irq, void *fn, unsigned int val, int en)
 
 	flags = pure_arch_local_irq_save();
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i;
 
 		for (i = 0; i < ARRAY_SIZE(ess_irqlog_exlist); i++) {
@@ -952,7 +952,7 @@ void exynos_ss_irq_exit(unsigned int irq, unsigned long long start_time)
 		if (irq == ess_irqexit_exlist[i])
 			return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long long time, latency;
 
 		i = atomic_inc_return(&ess_idx.irq_exit_log_idx[cpu]) &
@@ -982,7 +982,7 @@ void exynos_ss_spinlock(void *v_lock, int en)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned index = atomic_inc_return(&ess_idx.spinlock_log_idx[cpu]);
 		unsigned long j, i = index & (ARRAY_SIZE(ess_log->spinlock[0]) - 1);
 		raw_spinlock_t *lock = (raw_spinlock_t *)v_lock;
@@ -1010,7 +1010,7 @@ void exynos_ss_spinlock(void *v_lock, int en)
 void exynos_ss_irqs_disabled(unsigned long flags)
 {
 	struct exynos_ss_item *item = &ess_items[ess_desc.kevents_num];
-	int cpu = get_current_cpunum();
+	int cpu = 0;
 
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
@@ -1055,7 +1055,7 @@ void exynos_ss_clk(void *clock, const char *func_name, unsigned long arg, int mo
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.clk_log_idx) &
 				(ARRAY_SIZE(ess_log->clk) - 1);
 
@@ -1076,7 +1076,7 @@ void exynos_ss_pmu(int id, const char *func_name, int mode)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.pmu_log_idx) &
 				(ARRAY_SIZE(ess_log->pmu) - 1);
 
@@ -1125,7 +1125,7 @@ void exynos_ss_freq(int type, unsigned long old_freq, unsigned long target_freq,
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.freq_log_idx) &
 				(ARRAY_SIZE(ess_log->freq) - 1);
 
@@ -1219,7 +1219,7 @@ void exynos_ss_hrtimer(void *timer, s64 *now, void *fn, int en)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long i = atomic_inc_return(&ess_idx.hrtimer_log_idx[cpu]) &
 				(ARRAY_SIZE(ess_log->hrtimers[0]) - 1);
 
@@ -1358,7 +1358,7 @@ out:
 void exynos_ss_reg(unsigned int read, size_t val, size_t reg, int en)
 {
 	struct exynos_ss_item *item = &ess_items[ess_desc.kevents_num];
-	int cpu = get_current_cpunum();
+	int cpu = 0;
 	unsigned long i, j;
 	size_t phys_reg, start_addr, end_addr;
 
@@ -1405,7 +1405,7 @@ void exynos_ss_clockevent(unsigned long long clc, int64_t delta, void *next_even
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long j, i = atomic_inc_return(&ess_idx.clockevent_log_idx[cpu]) &
 				(ARRAY_SIZE(ess_log->clockevent[0]) - 1);
 
@@ -1428,7 +1428,7 @@ void exynos_ss_printk(const char *fmt, ...)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		va_list args;
 		int ret;
 		unsigned long j, i = atomic_inc_return(&ess_idx.printk_log_idx) &
@@ -1456,7 +1456,7 @@ void exynos_ss_printkl(size_t msg, size_t val)
 	if (unlikely(!ess_base.enabled || !item->entry.enabled))
 		return;
 	{
-		int cpu = get_current_cpunum();
+		int cpu = 0;
 		unsigned long j, i = atomic_inc_return(&ess_idx.printkl_log_idx) &
 				(ARRAY_SIZE(ess_log->printkl) - 1);
 

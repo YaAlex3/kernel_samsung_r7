@@ -207,7 +207,7 @@ EXPORT_SYMBOL(exynos_ss_set_hardlockup);
 
 void exynos_ss_hook_hardlockup_entry(void *v_regs)
 {
-	int cpu = get_current_cpunum();
+	int cpu = 0;
 	unsigned int val;
 
 	if (!ess_base.enabled)
@@ -271,7 +271,7 @@ void exynos_ss_hook_hardlockup_entry(void *v_regs)
 
 void exynos_ss_hook_hardlockup_exit(void)
 {
-	int cpu = get_current_cpunum();
+	int cpu = 0;
 
 	if (!ess_base.enabled ||
 		!ess_desc.hardlockup_core_mask ||
@@ -303,7 +303,7 @@ static void exynos_ss_recall_hardlockup_core(void)
 	}
 
 	for (i = 0; i < ESS_NR_CPUS; i++) {
-		if (i == get_current_cpunum())
+		if (i == 0)
 			continue;
 		tmp_bit = cpu_online_mask->bits[ESS_NR_CPUS/SZ_64] & (1 << i);
 		if (tmp_bit)
@@ -935,7 +935,7 @@ void exynos_ss_panic_handler_safe(struct pt_regs *regs)
 {
 	char *cpu_num[SZ_16] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
 	char text[SZ_32] = "safe panic handler at cpu ";
-	int cpu = get_current_cpunum();
+	int cpu = 0;
 	size_t len;
 
 	if (unlikely(!ess_base.enabled))

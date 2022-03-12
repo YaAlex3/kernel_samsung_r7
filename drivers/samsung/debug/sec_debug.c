@@ -940,13 +940,6 @@ static void sec_debug_set_taskinfo(void)
 	SET_MEMBER_TYPE_INFO(&sdn->task.ts.sched_info__last_queued,
 					struct task_struct,
 					sched_info.last_queued);
-	SET_MEMBER_TYPE_INFO(&sdn->task.ts.ssdbg_wait__type,
-					struct task_struct,
-					ssdbg_wait.type);
-	SET_MEMBER_TYPE_INFO(&sdn->task.ts.ssdbg_wait__data,
-					struct task_struct,
-					ssdbg_wait.data);
-
 	sdn->task.init_task = (uint64_t)&init_task;
 }
 

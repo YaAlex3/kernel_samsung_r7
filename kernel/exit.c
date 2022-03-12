@@ -62,10 +62,6 @@
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
 
-#ifdef CONFIG_SECURITY_DEFEX
-#include <linux/defex.h>
-#endif
-
 static void __unhash_process(struct task_struct *p, bool group_dead)
 {
 	nr_threads--;
@@ -744,10 +740,7 @@ void __noreturn do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
-
-#ifdef CONFIG_SECURITY_DEFEX
-	task_defex_zero_creds(current);
-#endif
+	TASKS_RCU(int tasks_rcu_i);
 
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);
@@ -865,7 +858,9 @@ void __noreturn do_exit(long code)
 	 */
 	flush_ptrace_hw_breakpoint(tsk);
 
-	exit_tasks_rcu_start();
+	TASKS_RCU(preempt_disable());
+	TASKS_RCU(tasks_rcu_i = __srcu_read_lock(&tasks_rcu_exit_srcu));
+	TASKS_RCU(preempt_enable());
 	exit_notify(tsk, group_dead);
 	proc_exit_connector(tsk);
 	mpol_put_task_policy(tsk);
@@ -900,7 +895,7 @@ void __noreturn do_exit(long code)
 	if (tsk->nr_dirtied)
 		__this_cpu_add(dirty_throttle_leaks, tsk->nr_dirtied);
 	exit_rcu();
-	exit_tasks_rcu_finish();
+	TASKS_RCU(__srcu_read_unlock(&tasks_rcu_exit_srcu, tasks_rcu_i));
 
 	do_task_dead();
 }
@@ -928,14 +923,6 @@ void
 do_group_exit(int exit_code)
 {
 	struct signal_struct *sig = current->signal;
-
-#ifdef CONFIG_SEC_DEBUG_INIT_EXIT_PANIC
-	if (current->pid == 1) {
-		pr_err("[%s] trap before init(1) group exit, exit_code:%d\n",
-			current->comm, exit_code);
-		panic("Attempted to kill init task group! exitcode=0x%08x\n", exit_code);
-	}
-#endif
 
 	BUG_ON(exit_code & 0x80); /* core dumps don't get here */
 

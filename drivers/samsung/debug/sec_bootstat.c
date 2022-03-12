@@ -148,7 +148,6 @@ void sec_enhanced_boot_stat_record(const char *buf)
 	t = local_clock();
 	do_div(t, 1000000);
 	entry->time = (unsigned int)t;
-	sec_bootstat_get_cpuinfo(entry->freq, &entry->online);
 	list_add(&entry->next, &enhanced_boot_time_list);
 	events_ebs++;
 }
@@ -198,7 +197,6 @@ void sec_bootstat_add(const char *c)
 				t = local_clock();
 				do_div(t, 1000000);
 				boot_events[i].time = (unsigned int)t;
-				sec_bootstat_get_cpuinfo(boot_events[i].freq, &boot_events[i].online);
 				sec_bootstat_get_thermal(boot_events[i].temp);
 			}
 			// careful check bootcomplete message index 9
@@ -367,7 +365,6 @@ static ssize_t store_boot_stat(struct device *dev, struct device_attribute *attr
 		t = local_clock();
 		do_div(t, 1000000);
 		boot_events[0].time = (unsigned int)t;
-		sec_bootstat_get_cpuinfo(boot_events[0].freq, &boot_events[0].online);
 		sec_bootstat_get_thermal(boot_events[0].temp);
 	}
 

@@ -108,36 +108,6 @@ late_initcall(esmc_sysfs_init);
 int exynos_smc(unsigned long cmd, unsigned long arg1, unsigned long arg2, unsigned long arg3)
 {
 	int32_t ret;
-#ifdef CONFIG_EXYNOS_SNAPSHOT_LOGGING_SMC_CALL
-	unsigned long flags;
-	uint32_t cpu;
-	uint64_t time, end_time, latency;
-
-	cpu = get_current_cpunum();
-	time = cpu_clock(cpu);
-#endif
 	ret = __exynos_smc(cmd, arg1, arg2, arg3);
-#ifdef CONFIG_EXYNOS_SNAPSHOT_LOGGING_SMC_CALL
-	end_time = cpu_clock(cpu);
-	latency = end_time - time;
-
-	spin_lock_irqsave(&smc_log_lock, flags);
-	if (latency > (esmc_log_threshold * 1000)) {
-		smc_log[cpu][smc_log_idx[cpu]].cpu_clk = local_clock();
-		smc_log[cpu][smc_log_idx[cpu]].latency = latency;
-		smc_log[cpu][smc_log_idx[cpu]].time = time;
-		smc_log[cpu][smc_log_idx[cpu]].end_time = end_time;
-		smc_log[cpu][smc_log_idx[cpu]].sp =
-			(uint64_t)current_stack_pointer;
-		smc_log[cpu][smc_log_idx[cpu]].cmd = cmd;
-		smc_log[cpu][smc_log_idx[cpu]].arg1 = arg1;
-		smc_log[cpu][smc_log_idx[cpu]].arg2 = arg2;
-		smc_log[cpu][smc_log_idx[cpu]].arg3 = arg3;
-		smc_log_idx[cpu]++;
-		if (smc_log_idx[cpu] == EXYNOS_SMC_LOG_SIZE)
-			smc_log_idx[cpu] = 0;
-	}
-	spin_unlock_irqrestore(&smc_log_lock, flags);
-#endif
 	return ret;
 }
