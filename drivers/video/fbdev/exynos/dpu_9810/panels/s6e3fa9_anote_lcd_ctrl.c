@@ -133,8 +133,8 @@ struct lcd_info {
 	union lpm_info			alpm;
 	union lpm_info			current_alpm;
 
-#if defined(CONFIG_SEC_FACTORY)
 	unsigned int			prev_brightness;
+#if defined(CONFIG_SEC_FACTORY)
 	union lpm_info			prev_alpm;
 #endif
 #endif
@@ -153,6 +153,7 @@ struct lcd_info {
 	struct workqueue_struct		*conn_workqueue;
 	struct work_struct		conn_work;
 	unsigned int disp_on;
+	unsigned int hbm_override;
 };
 
 static int dsim_write_hl_data(struct lcd_info *lcd, const u8 *cmd, u32 cmdsize)
@@ -598,8 +599,11 @@ static int dsim_panel_set_brightness(struct lcd_info *lcd, int force)
 		goto exit;
 	}
 #endif
-
-	lcd->brightness = lcd->bd->props.brightness;
+	if (lcd->hbm_override < 1) {
+		lcd->brightness = lcd->bd->props.brightness;
+	} else {
+		lcd->prev_brightness = lcd->bd->props.brightness;
+	}
 #if defined(CONFIG_SUPPORT_MASK_LAYER)
 	if (decon && decon->current_mask_layer) {
 		dev_info(&lcd->ld->dev, "%s: brightness: %d -> %d mask_layer: %d\n", __func__, lcd->brightness, lcd->mask_brightness, decon->current_mask_layer);
@@ -1386,6 +1390,39 @@ static ssize_t fp_green_circle_store(struct device *dev,
 	return size;
 }
 
+static ssize_t hbm_override_show(struct device *dev,
+        struct device_attribute *attr, char *buf)
+{
+        struct lcd_info *lcd = dev_get_drvdata(dev);
+
+        sprintf(buf, "%d\n", lcd->hbm_override);
+	return strlen(buf);
+
+}
+
+static ssize_t hbm_override_store(struct device *dev,
+        struct device_attribute *attr, const char *buf, size_t size)
+{
+        struct lcd_info *lcd = dev_get_drvdata(dev);
+        int rc;
+        unsigned int value;
+
+        rc = kstrtouint(buf, 0, &value);
+        if (rc < 0)
+                return rc;
+
+	if (value == 1) {
+		lcd->prev_brightness = lcd->brightness;
+		lcd->brightness = EXTEND_BRIGHTNESS;
+	}
+        if (value == 0) {
+                lcd->brightness = lcd->prev_brightness;
+        }
+	lcd->hbm_override = value;
+	dsim_panel_set_brightness(lcd, 1);
+	return size;
+}
+
 static ssize_t adaptive_control_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1847,6 +1884,7 @@ static DEVICE_ATTR(xtalk_mode, 0220, NULL, xtalk_mode_store);
 #if defined(CONFIG_SEC_FACTORY)
 static DEVICE_ATTR(enable_fd, 0220, NULL, enable_fd_store);
 #endif
+static DEVICE_ATTR(hbm_override, 0664, hbm_override_show, hbm_override_store);
 
 static struct attribute *lcd_sysfs_attributes[] = {
 	&dev_attr_lcd_type.attr,
@@ -1867,6 +1905,7 @@ static struct attribute *lcd_sysfs_attributes[] = {
 #if defined(CONFIG_SEC_FACTORY)
 	&dev_attr_enable_fd.attr,
 #endif
+	&dev_attr_hbm_override.attr,
 #if defined(CONFIG_DISPLAY_USE_INFO)
 	&dev_attr_dpui.attr,
 	&dev_attr_dpui_dbg.attr,
