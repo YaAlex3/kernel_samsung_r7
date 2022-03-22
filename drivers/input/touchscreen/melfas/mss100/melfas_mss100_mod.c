@@ -636,8 +636,9 @@ int mms_custom_event_handler(struct mms_ts_info *info, u8 *rbuf, u8 size)
 				info->scrub_y = (gesture_data[1] << 4)|(gesture_data[2] & 0x0F);
 				input_info(true, &info->client->dev, "%s - AOD: id[%d] x[%d] y[%d]\n",
 									__func__, info->scrub_id, info->scrub_x, info->scrub_y);
-				input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+				input_report_key(info->input_dev, KEY_WAKEUP, 1);
 				input_sync(info->input_dev);
+				input_report_key(info->input_dev, KEY_WAKEUP, 0);
 			} else if (gesture_id == MMS_GESTURE_ID_DOUBLETAP_TO_WAKEUP) {
 				input_info(true, &info->client->dev, "%s: AOT\n", __func__);
 				input_report_key(info->input_dev, KEY_WAKEUP, 1);
