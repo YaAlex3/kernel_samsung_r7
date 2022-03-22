@@ -464,6 +464,9 @@ struct mms_ts_info {
 	u32 defect_probability;
 	u8 item_cmdata;
 	bool check_version;
+#ifdef CONFIG_FB
+	struct notifier_block fb_notif;
+#endif
 };
 
 enum IC_STATUS {
