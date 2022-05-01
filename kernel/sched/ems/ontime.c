@@ -23,6 +23,7 @@
 /****************************************************************/
 #define TASK_TRACK_COUNT	5
 #define MIN_CAPACITY_CPU	0
+#define MAX_CAPACITY_CPU	(NR_CPUS - 1)
 
 #define ontime_of(p)		(&p->se.ontime)
 
@@ -37,8 +38,6 @@ struct ontime_cond {
 
 	unsigned long		upper_boundary;
 	unsigned long		lower_boundary;
-	unsigned long		upper_boundary_s;
-	unsigned long		lower_boundary_s;
 	/* Ratio at which ontime util can be covered within capacity */
 	int			coverage_ratio;
 
@@ -68,6 +67,18 @@ static inline struct sched_entity *se_of(struct sched_avg *sa)
 	return container_of(sa, struct sched_entity, avg);
 }
 
+extern long schedtune_margin(unsigned long signal, long boost);
+static inline unsigned long ontime_load_avg(struct task_struct *p)
+{
+	int boost = schedtune_task_boost(p);
+	unsigned long load_avg = ontime_of(p)->avg.load_avg;
+
+	if (boost == 0)
+		return load_avg;
+
+	return load_avg + schedtune_margin(load_avg, boost);
+}
+
 struct ontime_cond *get_current_cond(int cpu)
 {
 	struct ontime_cond *curr;
@@ -80,25 +91,22 @@ struct ontime_cond *get_current_cond(int cpu)
 	return NULL;
 }
 
-#define u_boundary(cond, p)	(p->sse ? cond->upper_boundary_s : cond->upper_boundary)
-#define l_boundary(cond, p)	(p->sse ? cond->lower_boundary_s : cond->lower_boundary)
-
-static unsigned long get_upper_boundary(int cpu, struct task_struct *p)
+static unsigned long get_upper_boundary(int cpu)
 {
 	struct ontime_cond *curr = get_current_cond(cpu);
 
 	if (curr)
-		return u_boundary(curr, p);
+		return curr->upper_boundary;
 	else
 		return ULONG_MAX;
 }
 
-static unsigned long get_lower_boundary(int cpu, struct task_struct *p)
+static unsigned long get_lower_boundary(int cpu)
 {
 	struct ontime_cond *curr = get_current_cond(cpu);
 
 	if (curr)
-		return l_boundary(curr, p);
+		return curr->lower_boundary;
 	else
 		return 0;
 }
@@ -113,12 +121,9 @@ static unsigned long get_coverage_ratio(int cpu)
 		return 0;
 }
 
-static bool is_faster_than(int src, int dst, int sse)
+static bool is_faster_than(int src, int dst)
 {
-	if (cpumask_test_cpu(dst, cpu_coregroup_mask(src)))
-		return false;
-
-	if (capacity_orig_of_sse(src, sse) < capacity_orig_of_sse(dst, sse))
+	if (get_cpu_max_capacity(src) < get_cpu_max_capacity(dst))
 		return true;
 	else
 		return false;
@@ -129,7 +134,6 @@ ontime_select_fit_cpus(struct task_struct *p, struct cpumask *fit_cpus)
 {
 	struct ontime_cond *curr;
 	int src_cpu = task_cpu(p);
-	u32 runnable = ml_task_runnable(p);
 
 	curr = get_current_cond(src_cpu);
 	if (!curr)
@@ -137,26 +141,26 @@ ontime_select_fit_cpus(struct task_struct *p, struct cpumask *fit_cpus)
 
 	cpumask_clear(fit_cpus);
 
-	if (runnable >= u_boundary(curr, p)) {
+	if (ontime_load_avg(p) >= curr->upper_boundary) {
 		/*
-		 * If runnable of the task is above upper boundary of source,
-		 * find fit cpus that have higher mips than source.
+		 * If task's load is above upper boundary of source,
+		 * find fit_cpus that have higher mips than source.
 		 */
 		list_for_each_entry(curr, &cond_list, list) {
 			int dst_cpu = cpumask_first(&curr->cpus);
 
-			if (is_faster_than(src_cpu, dst_cpu, p->sse))
+			if (is_faster_than(src_cpu, dst_cpu))
 				cpumask_or(fit_cpus, fit_cpus, &curr->cpus);
 		}
-	} else if (runnable >= l_boundary(curr, p)) {
+	} else if (ontime_load_avg(p) >= curr->lower_boundary) {
 		/*
-		 * If runnable is between upper boundary and lower boundary of source,
+		 * If task's load is between upper boundary and lower boundary of source,
 		 * fit cpus is the coregroup of source.
 		 */
 		cpumask_copy(fit_cpus, cpu_coregroup_mask(src_cpu));
 	} else {
 		/*
-		 * If runnable is below lower boundary of source,
+		 * If task's load is below lower boundary,
 		 * don't need to do ontime migration or wakeup.
 		 */
 		return -1;
@@ -204,7 +208,7 @@ ontime_select_target_cpu(struct task_struct *p, struct cpumask *fit_cpus)
 			if (cpu_rq(i)->ontime_migrating)
 				continue;
 
-			new_util = ml_task_attached_cpu_util(i, p);
+			new_util = task_util_est(p) + cpu_util_wake(i, p);
 			if (idle_cpu(i)) {
 				/* 1. Find shallowest idle_cpu */
 				struct cpuidle_state *idle = idle_get_state(cpu_rq(cpu));
@@ -233,7 +237,6 @@ ontime_select_target_cpu(struct task_struct *p, struct cpumask *fit_cpus)
 				}
 			}
 		}
-
 		if (cpu_selected(best_cpu)) {
 			cpumask_set_cpu(best_cpu, &candidates);
 			candidate_count++;
@@ -279,7 +282,7 @@ ontime_pick_heavy_task(struct sched_entity *se, int *boost_migration)
 {
 	struct task_struct *heaviest_task = NULL;
 	struct task_struct *p;
-	u32 runnable, max_ratio = 0;
+	unsigned int max_util_avg = 0;
 	int task_count = 0;
 	int boosted = !!global_boosted() || !!schedtune_prefer_perf(task_of(se));
 
@@ -292,20 +295,16 @@ ontime_pick_heavy_task(struct sched_entity *se, int *boost_migration)
 		*boost_migration = 1;
 		return p;
 	}
-
 	if (schedtune_ontime_en(p)) {
-		runnable = ml_task_runnable(p);
-		if (runnable >= get_upper_boundary(task_cpu(p), p)) {
+		if (ontime_load_avg(p) >= get_upper_boundary(task_cpu(p))) {
 			heaviest_task = p;
-			max_ratio = runnable * 100 / get_cpu_max_capacity(task_cpu(p), p->sse);
+			max_util_avg = ontime_load_avg(p);
 			*boost_migration = 0;
 		}
 	}
 
 	se = __pick_first_entity(se->cfs_rq);
 	while (se && task_count < TASK_TRACK_COUNT) {
-		int task_ratio;
-
 		/* Skip non-task entity */
 		if (entity_is_cfs_rq(se))
 			goto next_entity;
@@ -320,14 +319,12 @@ ontime_pick_heavy_task(struct sched_entity *se, int *boost_migration)
 		if (!schedtune_ontime_en(p))
 			goto next_entity;
 
-		runnable = ml_task_runnable(p);
-		if (runnable < get_upper_boundary(task_cpu(p), p))
+		if (ontime_load_avg(p) < get_upper_boundary(task_cpu(p)))
 			goto next_entity;
 
-		task_ratio = runnable * 100 / get_cpu_max_capacity(task_cpu(p), p->sse);
-		if (task_ratio > max_ratio) {
+		if (ontime_load_avg(p) > max_util_avg) {
 			heaviest_task = p;
-			max_ratio = task_ratio;
+			max_util_avg = ontime_load_avg(p);
 			*boost_migration = 0;
 		}
 
@@ -381,7 +378,7 @@ static void move_task(struct task_struct *p, struct ontime_env *env)
 
 static int move_specific_task(struct task_struct *target, struct ontime_env *env)
 {
-	struct list_head *tasks = lb_cfs_tasks(env->src_rq, target->sse);
+	struct list_head *tasks = &env->src_rq->cfs_tasks;
 	struct task_struct *p, *n;
 
 	list_for_each_entry_safe(p, n, tasks, se.group_node) {
@@ -422,7 +419,7 @@ static int ontime_migration_cpu_stop(void *data)
 	/* Move task from source to destination */
 	double_lock_balance(src_rq, dst_rq);
 	if (move_specific_task(p, env)) {
-		trace_ems_ontime_migration(p, ml_task_runnable(p),
+		trace_ems_ontime_migration(p, ontime_of(p)->avg.load_avg,
 				src_cpu, dst_cpu, boost_migration);
 	}
 	double_unlock_balance(src_rq, dst_rq);
@@ -439,15 +436,38 @@ out_unlock:
 	return 0;
 }
 
+static void ontime_update_next_balance(int cpu, struct ontime_avg *oa)
+{
+	if (cpumask_test_cpu(cpu, cpu_coregroup_mask(MAX_CAPACITY_CPU)))
+		return;
+
+	if (oa->load_avg < get_upper_boundary(cpu))
+		return;
+
+	/*
+	 * Update the next_balance of this cpu because tick is most likely
+	 * to occur first in currently running cpu.
+	 */
+	cpu_rq(smp_processor_id())->next_balance = jiffies;
+}
+
+extern u64 decay_load(u64 val, u64 n);
+static u32 __accumulate_pelt_segments(u64 periods, u32 d1, u32 d3)
+{
+	u32 c1, c2, c3 = d3;
+
+	c1 = decay_load((u64)d1, periods);
+	c2 = LOAD_AVG_MAX - decay_load(LOAD_AVG_MAX, periods) - 1024;
+
+	return c1 + c2 + c3;
+}
+
 /****************************************************************/
 /*			External APIs				*/
 /****************************************************************/
-int need_ontime_migration_trigger(int cpu, struct task_struct *p)
+void ontime_trace_task_info(struct task_struct *p)
 {
-	if (ml_task_runnable(p) < get_upper_boundary(cpu, p))
-		return 0;
-
-	return 1;
+	trace_ems_ontime_load_avg_task(p, &ontime_of(p)->avg, ontime_of(p)->migrating);
 }
 
 DEFINE_PER_CPU(struct cpu_stop_work, ontime_migration_work);
@@ -469,6 +489,10 @@ void ontime_migration(void)
 		struct cpumask fit_cpus;
 		int boost_migration = 0;
 		int dst_cpu;
+
+		/* Task in big cores don't be ontime migrated. */
+		if (cpumask_test_cpu(cpu, cpu_coregroup_mask(MAX_CAPACITY_CPU)))
+			break;
 
 		raw_spin_lock_irqsave(&rq->lock, flags);
 
@@ -521,7 +545,7 @@ void ontime_migration(void)
 		 * If fit_cpus is smaller than current coregroup,
 		 * don't need to ontime migration.
 		 */
-		if (!is_faster_than(cpu, cpumask_first(&fit_cpus), p->sse)) {
+		if (!is_faster_than(cpu, cpumask_first(&fit_cpus))) {
 			raw_spin_unlock_irqrestore(&rq->lock, flags);
 			continue;
 		}
@@ -586,7 +610,8 @@ int ontime_task_wakeup(struct task_struct *p, int sync)
 		int cpu = smp_processor_id();
 
 		if (cpumask_test_cpu(cpu, &p->cpus_allowed)
-				&& cpumask_test_cpu(cpu, &fit_cpus)) {
+				&& cpumask_test_cpu(cpu, &fit_cpus)
+				&& cpu_rq(cpu)->nr_running < 2) {
 			trace_ems_ontime_task_wakeup(p, src_cpu, cpu, "ontime-sync wakeup");
 			return cpu;
 		}
@@ -605,7 +630,6 @@ int ontime_task_wakeup(struct task_struct *p, int sync)
 int ontime_can_migration(struct task_struct *p, int dst_cpu)
 {
 	int src_cpu = task_cpu(p);
-	u32 runnable;
 
 	if (!schedtune_ontime_en(p))
 		return true;
@@ -620,7 +644,7 @@ int ontime_can_migration(struct task_struct *p, int dst_cpu)
 		return true;
 	}
 
-	if (is_faster_than(src_cpu, dst_cpu, p->sse)) {
+	if (is_faster_than(src_cpu, dst_cpu)) {
 		trace_ems_ontime_check_migrate(p, dst_cpu, true, "go to bigger");
 		return true;
 	}
@@ -628,8 +652,7 @@ int ontime_can_migration(struct task_struct *p, int dst_cpu)
 	/*
 	 * At this point, load balancer is trying to migrate task to smaller CPU.
 	 */
-	runnable = ml_task_runnable(p);
-	if (runnable < get_lower_boundary(src_cpu, p)) {
+	if (ontime_load_avg(p) < get_lower_boundary(src_cpu)) {
 		trace_ems_ontime_check_migrate(p, dst_cpu, true, "light task");
 		return true;
 	}
@@ -639,12 +662,12 @@ int ontime_can_migration(struct task_struct *p, int dst_cpu)
 	 * If so, allow the task to be migrated.
 	 */
 	if (cpu_rq(src_cpu)->nr_running > 1) {
-		unsigned long cpu_util = ml_task_attached_cpu_util(src_cpu, p);
-		unsigned long task_util = cpu_util - ml_cpu_util_wake(src_cpu, p);
+		unsigned long cpu_util = cpu_util_wake(src_cpu, p);
+		unsigned long util = task_util(p);
 		unsigned long coverage_ratio = get_coverage_ratio(src_cpu);
 
 		if ((cpu_util * 100 >= capacity_orig_of(src_cpu) * coverage_ratio)
-				&& ((cpu_util >> 1) > task_util)) {
+				&& (cpu_util > util)) {
 			trace_ems_ontime_check_migrate(p, dst_cpu, true, "exceed coverage");
 			return true;
 		}
@@ -652,6 +675,66 @@ int ontime_can_migration(struct task_struct *p, int dst_cpu)
 
 	trace_ems_ontime_check_migrate(p, dst_cpu, false, "heavy task");
 	return false;
+}
+
+/*
+ * ontime_update_load_avg : load tracking for ontime-migration
+ *
+ * @sa : sched_avg to be updated
+ * @delta : elapsed time since last update
+ * @period_contrib : amount already accumulated against our next period
+ * @scale_freq : scale vector of cpu frequency
+ * @scale_cpu : scale vector of cpu capacity
+ */
+void ontime_update_load_avg(u64 delta, int cpu, unsigned long weight, struct sched_avg *sa)
+{
+	struct ontime_avg *oa = &se_of(sa)->ontime.avg;
+	unsigned long scale_freq, scale_cpu;
+	u32 contrib = (u32)delta; /* p == 0 -> delta < 1024 */
+	u64 periods;
+
+	scale_freq = arch_scale_freq_capacity(NULL, cpu);
+	scale_cpu = arch_scale_cpu_capacity(NULL, cpu);
+
+	delta += oa->period_contrib;
+	periods = delta / 1024; /* A period is 1024us (~1ms) */
+
+	if (periods) {
+		oa->load_sum = decay_load(oa->load_sum, periods);
+
+		delta %= 1024;
+		contrib = __accumulate_pelt_segments(periods,
+				1024 - oa->period_contrib, delta);
+	}
+	oa->period_contrib = delta;
+
+	if (weight) {
+		contrib = cap_scale(contrib, scale_freq);
+		oa->load_sum += contrib * scale_cpu;
+	}
+
+	if (!periods)
+		return;
+
+	oa->load_avg = div_u64(oa->load_sum, LOAD_AVG_MAX - 1024 + oa->period_contrib);
+	ontime_update_next_balance(cpu, oa);
+}
+
+void ontime_new_entity_load(struct task_struct *parent, struct sched_entity *se)
+{
+	struct ontime_entity *ontime;
+
+	if (entity_is_cfs_rq(se))
+		return;
+
+	ontime = &se->ontime;
+
+	ontime->avg.load_sum = ontime_of(parent)->avg.load_sum >> 1;
+	ontime->avg.load_avg = ontime_of(parent)->avg.load_avg >> 1;
+	ontime->avg.period_contrib = 1023;
+	ontime->migrating = 0;
+
+	trace_ems_ontime_new_entity_load(task_of(se), &ontime->avg);
 }
 
 /****************************************************************/
@@ -694,18 +777,12 @@ static ssize_t store_##_name(struct kobject *k, const char *buf, size_t count)	\
 
 ontime_show(upper_boundary);
 ontime_show(lower_boundary);
-ontime_show(upper_boundary_s);
-ontime_show(lower_boundary_s);
 ontime_show(coverage_ratio);
 ontime_store(upper_boundary, unsigned long, 1024);
 ontime_store(lower_boundary, unsigned long, 1024);
-ontime_store(upper_boundary_s, unsigned long, 1024);
-ontime_store(lower_boundary_s, unsigned long, 1024);
 ontime_store(coverage_ratio, int, 100);
 ontime_attr_rw(upper_boundary);
 ontime_attr_rw(lower_boundary);
-ontime_attr_rw(upper_boundary_s);
-ontime_attr_rw(lower_boundary_s);
 ontime_attr_rw(coverage_ratio);
 
 static ssize_t show(struct kobject *kobj, struct attribute *at, char *buf)
@@ -731,8 +808,6 @@ static const struct sysfs_ops ontime_sysfs_ops = {
 static struct attribute *ontime_attrs[] = {
 	&upper_boundary_attr.attr,
 	&lower_boundary_attr.attr,
-	&upper_boundary_s_attr.attr,
-	&lower_boundary_s_attr.attr,
 	&coverage_ratio_attr.attr,
 	NULL
 };
@@ -780,13 +855,14 @@ out:
 static inline unsigned long get_boundary(unsigned long capacity, int ratio)
 {
 	/*
-	 * If ratio is negative, migration is not allowed.
+	 * If ratio is negative, migration is disabled
 	 * -> threshold == maximum util(1024)
 	 */
 	if (ratio < 0)
 		return SCHED_CAPACITY_SCALE;
 
 	return capacity * ratio / 100;
+
 }
 
 static void __init
@@ -794,7 +870,7 @@ parse_ontime(struct device_node *dn, struct ontime_cond *cond, int cnt)
 {
 	struct device_node *ontime, *coregroup;
 	char name[15];
-	unsigned long capacity, capacity_s;
+	unsigned long capacity;
 	int prop;
 	int res = 0;
 
@@ -808,8 +884,7 @@ parse_ontime(struct device_node *dn, struct ontime_cond *cond, int cnt)
 		goto disable;
 	cond->coregroup = cnt;
 
-	capacity = get_cpu_max_capacity(cpumask_first(&cond->cpus), 0);
-	capacity_s = get_cpu_max_capacity(cpumask_first(&cond->cpus), 1);
+	capacity = get_cpu_max_capacity(cpumask_first(&cond->cpus));
 
 	/* If capacity of this coregroup is 0, disable ontime of this coregroup */
 	if (capacity == 0)
@@ -821,12 +896,6 @@ parse_ontime(struct device_node *dn, struct ontime_cond *cond, int cnt)
 
 	res |= of_property_read_s32(coregroup, "lower-boundary", &prop);
 	cond->lower_boundary = get_boundary(capacity, prop);
-
-	res |= of_property_read_s32(coregroup, "upper-boundary-s", &prop);
-	cond->upper_boundary_s = get_boundary(capacity_s, prop);
-
-	res |= of_property_read_s32(coregroup, "lower-boundary-s", &prop);
-	cond->lower_boundary_s = get_boundary(capacity_s, prop);
 
 	res |= of_property_read_u32(coregroup, "coverage-ratio", &prop);
 	cond->coverage_ratio = prop;
@@ -842,8 +911,6 @@ disable:
 	cond->enabled = false;
 	cond->upper_boundary = ULONG_MAX;
 	cond->lower_boundary = 0;
-	cond->upper_boundary_s = ULONG_MAX;
-	cond->lower_boundary_s = 0;
 }
 
 static int __init init_ontime(void)

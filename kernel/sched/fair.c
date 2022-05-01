@@ -756,7 +756,7 @@ void init_entity_runnable_average(struct sched_entity *se)
 	sa->util_sum = 0;
 	/* when this task enqueue'ed, it will contribute to its cfs_rq's load_avg */
 
-	init_multi_load(se);
+	ontime_new_entity_load(current, se);
 }
 
 static inline u64 cfs_rq_clock_task(struct cfs_rq *cfs_rq);
@@ -834,8 +834,6 @@ util_init_done:
 
 		sa->util_est.ewma = 0;
 		sa->util_est.enqueued = 0;
-		sa->ml.util_est.ewma = 0;
-		sa->ml.util_est.enqueued = 0;
 	}
 
 	attach_entity_cfs_rq(se);
@@ -2652,11 +2650,7 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		struct rq *rq = rq_of(cfs_rq);
 
 		account_numa_enqueue(rq, task_of(se));
-
-		if (sched_feat(EXYNOS_MS))
-			lb_add_cfs_task(rq, se);
-		else
-			list_add(&se->group_node, &rq->cfs_tasks);
+		list_add(&se->group_node, &rq->cfs_tasks);
 	}
 #endif
 	cfs_rq->nr_running++;
@@ -2817,6 +2811,11 @@ static u32 __accumulate_pelt_segments(u64 periods, u32 d1, u32 d3)
 
 #define cap_scale(v, s) ((v)*(s) >> SCHED_CAPACITY_SHIFT)
 
+#ifdef CONFIG_FREQVAR_TUNE
+extern unsigned long freqvar_boost_vector(int cpu, unsigned long util,
+						struct cfs_rq *cfs_rq);
+#endif
+
 /*
  * Accumulate the three separate parts of the sum; d1 the remainder
  * of the last (incomplete) period, d2 the span of full periods and d3
@@ -2847,7 +2846,11 @@ accumulate_sum(u64 delta, int cpu, struct sched_avg *sa,
 	u64 periods;
 
 	scale_freq = arch_scale_freq_capacity(NULL, cpu);
+#ifdef CONFIG_FREQVAR_TUNE
+	scale_cpu = freqvar_boost_vector(cpu, sa->util_avg, cfs_rq);
+#else
 	scale_cpu = arch_scale_cpu_capacity(NULL, cpu);
+#endif
 
 	delta += sa->period_contrib;
 	periods = delta / 1024; /* A period is 1024us (~1ms) */
@@ -2951,8 +2954,8 @@ ___update_load_avg(u64 now, int cpu, struct sched_avg *sa,
 	if (!weight)
 		running = 0;
 
-	if (likely(!rt_rq))
-		update_multi_load(delta, cpu, sa, weight, running, cfs_rq);
+	if (!cfs_rq && !rt_rq)
+		ontime_update_load_avg(delta, cpu, weight, sa);
 
 	/*
 	 * Now we know we crossed measurement unit boundaries. The *_avg
@@ -3015,9 +3018,10 @@ __update_load_avg_se(u64 now, int cpu, struct cfs_rq *cfs_rq, struct sched_entit
 	if (___update_load_avg(now, cpu, &se->avg,
 				  se->on_rq * scale_load_down(se->load.weight),
 				  cfs_rq->curr == se, NULL, NULL)) {
-			cfs_se_util_change(&se->avg);
-			if (entity_is_task(se))
-				cfs_se_util_change_multi_load(task_of(se), &se->avg);
+		if (entity_is_task(se)) {
+			if (schedtune_util_est_en(task_of(se)))
+				cfs_se_util_change(&se->avg);
+		}
 		return 1;
 	}
 
@@ -3230,7 +3234,6 @@ static inline int propagate_entity_load_avg(struct sched_entity *se)
 
 	update_tg_cfs_util(cfs_rq, se);
 	update_tg_cfs_load(cfs_rq, se);
-	update_tg_multi_load(cfs_rq, se);
 
 	return 1;
 }
@@ -3338,8 +3341,6 @@ update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq, bool update_freq)
 		sub_positive(&sa->util_sum, r * LOAD_AVG_MAX);
 		removed_util = 1;
 		set_tg_cfs_propagate(cfs_rq);
-
-		apply_removed_multi_load(cfs_rq);
 	}
 
 	decayed = __update_load_avg_cfs_rq(now, cpu_of(rq_of(cfs_rq)), cfs_rq);
@@ -3427,6 +3428,7 @@ static inline void update_load_avg(struct sched_entity *se, int flags)
 		update_tg_load_avg(cfs_rq, 0);
 
 	if (entity_is_task(se)) {
+		ontime_trace_task_info(task_of(se));
 #ifdef CONFIG_SCHED_WALT
 		ptr = (void *)&(task_of(se)->ravg);
 #endif
@@ -3451,8 +3453,6 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	cfs_rq->avg.util_sum += se->avg.util_sum;
 	set_tg_cfs_propagate(cfs_rq);
 
-	attach_entity_multi_load(cfs_rq, se);
-
 	cfs_rq_util_change(cfs_rq);
 }
 
@@ -3472,8 +3472,6 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	sub_positive(&cfs_rq->avg.util_avg, se->avg.util_avg);
 	sub_positive(&cfs_rq->avg.util_sum, se->avg.util_sum);
 	set_tg_cfs_propagate(cfs_rq);
-
-	detach_entity_multi_load(cfs_rq, se);
 
 	cfs_rq_util_change(cfs_rq);
 }
@@ -3558,8 +3556,6 @@ void remove_entity_load_avg(struct sched_entity *se)
 	sync_entity_load_avg(se);
 	atomic_long_add(se->avg.load_avg, &cfs_rq->removed_load_avg);
 	atomic_long_add(se->avg.util_avg, &cfs_rq->removed_util_avg);
-
-	remove_entity_multi_load(cfs_rq, se);
 }
 
 static inline unsigned long cfs_rq_runnable_load_avg(struct cfs_rq *cfs_rq)
@@ -3584,21 +3580,23 @@ static inline unsigned long task_util(struct task_struct *p)
 	return READ_ONCE(p->se.avg.util_avg);
 }
 
-static inline unsigned long _task_util_est(struct task_struct *p)
+inline unsigned long _task_util_est(struct task_struct *p)
 {
 	struct util_est ue = READ_ONCE(p->se.avg.util_est);
 
-	return max(ue.ewma, ue.enqueued);
+	return schedtune_util_est_en(p) ? max(ue.ewma, ue.enqueued)
+					: task_util(p);
 }
 
-static inline unsigned long task_util_est(struct task_struct *p)
+inline unsigned long task_util_est(struct task_struct *p)
 {
 #ifdef CONFIG_SCHED_WALT
 	if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
 		return (p->ravg.demand /
 			(walt_ravg_window >> SCHED_CAPACITY_SHIFT));
 #endif
-	return max(task_util(p), _task_util_est(p));
+	return schedtune_util_est_en(p) ? max(READ_ONCE(p->se.avg.util_avg), _task_util_est(p))
+					: task_util(p);
 }
 
 static inline void util_est_enqueue(struct cfs_rq *cfs_rq,
@@ -3656,6 +3654,9 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	 * yet completed an activation, e.g. being migrated.
 	 */
 	if (!task_sleep)
+		return;
+
+	if (!schedtune_util_est_en(p))
 		return;
 
 	/*
@@ -5214,7 +5215,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * estimated utilization, before we update schedutil.
 	 */
 	util_est_enqueue(&rq->cfs, p);
-	enqueue_multi_load(&rq->cfs, p);
 
 	/*
 	 * If in_iowait is set, the code below may not trigger any cpufreq
@@ -5383,7 +5383,6 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 #endif /* CONFIG_SMP */
 
 	util_est_dequeue(&rq->cfs, p, task_sleep);
-	dequeue_multi_load(&rq->cfs, p, task_sleep);
 	hrtick_update(rq);
 }
 
@@ -6585,7 +6584,7 @@ static bool cpu_overutilized(int cpu)
 struct reciprocal_value schedtune_spc_rdiv;
 
 long
-schedtune_margin(unsigned long capacity, unsigned long signal, long boost)
+schedtune_margin(unsigned long signal, long boost)
 {
 	long long margin = 0;
 
@@ -6594,11 +6593,11 @@ schedtune_margin(unsigned long capacity, unsigned long signal, long boost)
 	 *
 	 * The Boost (B) value is used to compute a Margin (M) which is
 	 * proportional to the complement of the original Signal (S):
-	 *   M = B * (CAPACITY - S)
+	 *   M = B * (SCHED_CAPACITY_SCALE - S)
 	 * The obtained M could be used by the caller to "boost" S.
 	 */
 	if (boost >= 0) {
-		margin  = capacity - signal;
+		margin  = SCHED_CAPACITY_SCALE - signal;
 		margin *= boost;
 	} else {
 		margin = -signal * boost;
@@ -6615,29 +6614,27 @@ static inline int
 schedtune_cpu_margin(unsigned long util, int cpu)
 {
 	int boost = schedtune_cpu_boost(cpu);
-	unsigned long capacity;
 
 	if (boost == 0)
 		return 0;
 
-	capacity = capacity_orig_of(cpu);
-
-	return schedtune_margin(capacity, util, boost);
+	return schedtune_margin(util, boost);
 }
 
 static inline long
 schedtune_task_margin(struct task_struct *p)
 {
 	int boost = schedtune_task_boost(p);
-	unsigned long util, capacity;
+	unsigned long util;
+	long margin;
 
 	if (boost == 0)
 		return 0;
 
 	util = task_util_est(p);
-	capacity = capacity_orig_of(task_cpu(p));
+	margin = schedtune_margin(util, boost);
 
-	return schedtune_margin(capacity, util, boost);
+	return margin;
 }
 
 #else /* CONFIG_SCHED_TUNE */
@@ -6705,7 +6702,7 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 				(sd->imbalance_pct-100) / 100;
 
 	if (sched_feat(EXYNOS_MS)) {
-		idlest = lb_fit_idlest_group(sd, p);
+		idlest = exynos_fit_idlest_group(sd, p);
 		if (idlest)
 			return idlest;
 	}
@@ -8612,16 +8609,10 @@ static void detach_task(struct task_struct *p, struct lb_env *env)
 static struct task_struct *detach_one_task(struct lb_env *env)
 {
 	struct task_struct *p, *n;
-	struct list_head *tasks;
 
 	lockdep_assert_held(&env->src_rq->lock);
 
-	if (sched_feat(EXYNOS_MS))
-		tasks = lb_prefer_cfs_tasks(env->src_cpu, env->dst_cpu);
-	else
-		tasks = &env->src_rq->cfs_tasks;
-
-	list_for_each_entry_safe(p, n, tasks, se.group_node) {
+	list_for_each_entry_safe(p, n, &env->src_rq->cfs_tasks, se.group_node) {
 		if (!can_migrate_task(p, env))
 			continue;
 
@@ -8641,83 +8632,6 @@ static struct task_struct *detach_one_task(struct lb_env *env)
 
 static const unsigned int sched_nr_migrate_break = 32;
 
-static int __detach_tasks(struct lb_env* env, struct list_head *tasks)
-{
-	struct task_struct *p;
-	unsigned long load;
-	int detached = 0;
-
-	while (!list_empty(tasks)) {
-		/*
-		 * We only want to steal up to the prescribed amount of
-		 * weighted load.
-		 */
-		if (env->imbalance <= 0)
-			break;
-
-		/*
-		 * We don't want to steal all, otherwise we may be treated likewise,
-		 * which could at worst lead to a livelock crash.
-		 */
-		if (env->idle != CPU_NOT_IDLE && env->src_rq->nr_running <= 1)
-			break;
-
-		p = list_first_entry(tasks, struct task_struct, se.group_node);
-
-		env->loop++;
-		/* We've more or less seen every task there is, call it quits */
-		if (env->loop > env->loop_max)
-			break;
-
-		/* take a breather every nr_migrate tasks */
-		if (env->loop > env->loop_break) {
-			env->loop_break += sched_nr_migrate_break;
-			env->flags |= LBF_NEED_BREAK;
-			break;
-		}
-
-		if (!can_migrate_task(p, env))
-			goto next;
-
-		load = task_h_load(p);
-
-		if (sched_feat(LB_MIN) && load < 16 && !env->sd->nr_balance_failed)
-			goto next;
-
-		if ((load / 2) > env->imbalance)
-			goto next;
-
-		detach_task(p, env);
-		list_add(&p->se.group_node, &env->tasks);
-
-		detached++;
-		env->imbalance -= load;
-
-#ifdef CONFIG_PREEMPT
-		/*
-		 * NEWIDLE balancing is a source of latency, so preemptible
-		 * kernels will stop after the first task is detached to minimize
-		 * the critical section.
-		 */
-		if (env->idle == CPU_NEWLY_IDLE)
-			break;
-#endif
-
-		continue;
-next:
-		list_move_tail(&p->se.group_node, tasks);
-	}
-
-	/*
-	 * Right now, this is one of only two places we collect this stat
-	 * so we can safely collect detach_one_task() stats here rather
-	 * than inside detach_one_task().
-	 */
-	schedstat_add(env->sd->lb_gained[env->idle], detached);
-
-	return detached;
-}
-
 /*
  * detach_tasks() -- tries to detach up to imbalance weighted load from
  * busiest_rq, as part of a balancing operation within domain "sd".
@@ -8735,24 +8649,6 @@ static int detach_tasks(struct lb_env *env)
 
 	if (env->imbalance <= 0)
 		return 0;
-
-	if (sched_feat(EXYNOS_MS)) {
-		struct list_head *first, *next;
-		int sse = lb_check_priority(env->src_cpu, env->dst_cpu);
-
-		if (sse) {
-			first = &env->src_rq->sse_cfs_tasks;
-			next = &env->src_rq->uss_cfs_tasks;
-		} else {
-			first = &env->src_rq->uss_cfs_tasks;
-			next = &env->src_rq->sse_cfs_tasks;
-		}
-
-		detached  = __detach_tasks(env, first);
-		detached += __detach_tasks(env, next);
-
-		return detached;
-	}
 
 	while (!list_empty(tasks)) {
 		/*
@@ -10138,7 +10034,7 @@ static int need_active_balance(struct lb_env *env)
 	}
 
 	if (sched_feat(EXYNOS_MS))
-		return lb_need_active_balance(env->idle, sd, env->src_cpu, env->dst_cpu);
+		return exynos_need_active_balance(env->idle, sd, env->src_cpu, env->dst_cpu);
 
 	/*
 	 * The dst_cpu is idle and the src_cpu CPU has only 1 CFS task.

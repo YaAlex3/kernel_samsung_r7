@@ -17,12 +17,10 @@
 #include <linux/slab.h>
 #include <linux/cpu_pm.h>
 #include <linux/of.h>
-#include <linux/ems.h>
 #include <trace/events/power.h>
 
 #include "sched.h"
 #include "tune.h"
-#include "ems/ems.h"
 
 unsigned long boosted_cpu_util(int cpu);
 
@@ -175,11 +173,11 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
 }
 
 #ifdef CONFIG_FREQVAR_TUNE
-unsigned long freqvar_boost_vector(int cpu, unsigned long util);
+unsigned int freqvar_tipping_point(int cpu, unsigned int freq);
 #else
-static inline unsigned long freqvar_boost_vector(int cpu, unsigned long util)
+static inline unsigned int freqvar_tipping_point(int cpu, unsigned int freq)
 {
-	return util;
+	return  freq + (freq >> 2);
 }
 #endif
 
@@ -212,7 +210,7 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
 
-	freq = (freq + (freq >> 2)) * util / max;
+	freq = freqvar_tipping_point(policy->cpu, freq) * util / max;
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
 		return sg_policy->next_freq;
@@ -247,21 +245,12 @@ static void sugov_get_util(unsigned long *util, unsigned long *max, u64 time)
 	rt = div64_u64(rq->rt_avg, sched_avg_period() + delta);
 	rt = (rt * max_cap) >> SCHED_CAPACITY_SHIFT;
 
-#ifdef CONFIG_SCHED_EMS
-	*util = ml_boosted_cpu_util(cpu);
-#else
 	*util = boosted_cpu_util(cpu);
-#endif
 	if (likely(use_pelt()))
 		*util = *util + rt;
 
-	*util = freqvar_boost_vector(cpu, *util);
 	*util = min(*util, max_cap);
 	*max = max_cap;
-
-#ifdef CONFIG_SCHED_EMS
-	part_cpu_active_ratio(util, max, cpu);
-#endif
 }
 
 static void sugov_set_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
