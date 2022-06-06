@@ -1273,6 +1273,8 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 		wac_i2c->localscan_mode = false;
 	}
 
+	mss_epen_mode = wac_i2c->pen_prox || wac_i2c->pen_pressed;
+
 	return 0;
 }
 

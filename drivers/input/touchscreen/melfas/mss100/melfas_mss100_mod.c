@@ -14,6 +14,9 @@
 static bool ta_connected;
 #endif
 
+bool mss_epen_mode = false;
+EXPORT_SYMBOL(mss_epen_mode);
+
 /**
  * Control power supply
  */
@@ -295,6 +298,9 @@ void mms_input_event_handler(struct mms_ts_info *info, u8 sz, u8 *buf)
 	input_dbg(false, &client->dev, "%s [START]\n", __func__);
 	input_dbg(false, &client->dev, "%s - sz[%d] buf[0x%02X]\n", __func__, sz, buf[0]);
 
+        if (mss_epen_mode)
+        return;
+
 	for (i = 0; i < sz; i += info->event_size) {
 		u8 *packet = &buf[i];
 		int type;
@@ -438,23 +444,6 @@ void mms_input_event_handler(struct mms_ts_info *info, u8 sz, u8 *buf)
 						info->finger_state[id] = 0;
 
 						mms_ts_location_detect(info, location, info->coord[id].x, info->coord[id].y);
-#ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
-						input_info(true, &info->client->dev,
-								"[R] tID:%d loc:%s dd:%d,%d mc:%d tc:%d\n",
-								id, location,
-								info->coord[id].x - info->coord[id].p_x,
-								info->coord[id].y - info->coord[id].p_y,
-								info->coord[id].mcount, info->touch_count);
-
-#else
-						input_info(true, &info->client->dev,
-								"[R] tID:%d loc:%s dd:%d,%d mc:%d tc:%d lx:%d ly:%d\n",
-								id, location,
-								info->coord[id].x - info->coord[id].p_x,
-								info->coord[id].y - info->coord[id].p_y,
-								info->coord[id].mcount, info->touch_count,
-								info->coord[id].x, info->coord[id].y);
-#endif
 						info->coord[id].mcount = 0;
 					}
 				}
