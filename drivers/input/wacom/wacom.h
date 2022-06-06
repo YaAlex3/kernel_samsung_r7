@@ -394,4 +394,5 @@ extern int set_spen_mode(int mode);
 #ifdef CONFIG_SEC_FACTORY
 bool wacom_check_ub(struct wacom_i2c *wac_i2c);
 #endif
+extern bool mss_epen_mode;
 #endif /* _LINUX_WACOM_H_ */
