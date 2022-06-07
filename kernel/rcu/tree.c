@@ -842,8 +842,7 @@ EXPORT_SYMBOL_GPL(rcu_idle_enter);
  */
 void rcu_user_enter(void)
 {
-	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_user_enter() invoked with irqs enabled!!!");
-	rcu_eqs_enter(true);
+	rcu_eqs_enter(1);
 }
 #endif /* CONFIG_NO_HZ_FULL */
 
