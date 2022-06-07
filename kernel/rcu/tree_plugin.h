@@ -178,8 +178,6 @@ static void rcu_preempt_ctxt_queue(struct rcu_node *rnp, struct rcu_data *rdp)
 	struct task_struct *t = current;
 
 	lockdep_assert_held(&rnp->lock);
-	WARN_ON_ONCE(rdp->mynode != rnp);
-	WARN_ON_ONCE(rnp->level != rcu_num_lvls - 1);
 
 	/*
 	 * Decide where to queue the newly blocked task.  In theory,
@@ -261,10 +259,6 @@ static void rcu_preempt_ctxt_queue(struct rcu_node *rnp, struct rcu_data *rdp)
 		rnp->gp_tasks = &t->rcu_node_entry;
 	if (!rnp->exp_tasks && (blkd_state & RCU_EXP_BLKD))
 		rnp->exp_tasks = &t->rcu_node_entry;
-	WARN_ON_ONCE(!(blkd_state & RCU_GP_BLKD) !=
-		     !(rnp->qsmask & rdp->grpmask));
-	WARN_ON_ONCE(!(blkd_state & RCU_EXP_BLKD) !=
-		     !(rnp->expmask & rdp->grpmask));
 	raw_spin_unlock_rcu_node(rnp); /* interrupts remain disabled. */
 
 	/*
@@ -486,7 +480,6 @@ void rcu_read_unlock_special(struct task_struct *t)
 		rnp = t->rcu_blocked_node;
 		raw_spin_lock_rcu_node(rnp); /* irqs already disabled. */
 		WARN_ON_ONCE(rnp != t->rcu_blocked_node);
-		WARN_ON_ONCE(rnp->level != rcu_num_lvls - 1);
 		empty_norm = !rcu_preempt_blocked_readers_cgp(rnp);
 		empty_exp = sync_rcu_preempt_exp_done(rnp);
 		smp_mb(); /* ensure expedited fastpath sees end of RCU c-s. */
@@ -500,10 +493,10 @@ void rcu_read_unlock_special(struct task_struct *t)
 		if (&t->rcu_node_entry == rnp->exp_tasks)
 			rnp->exp_tasks = np;
 		if (IS_ENABLED(CONFIG_RCU_BOOST)) {
-			/* Snapshot ->boost_mtx ownership w/rnp->lock held. */
-			drop_boost_mutex = rt_mutex_owner(&rnp->boost_mtx) == t;
 			if (&t->rcu_node_entry == rnp->boost_tasks)
 				rnp->boost_tasks = np;
+			/* Snapshot ->boost_mtx ownership w/rnp->lock held. */
+			drop_boost_mutex = rt_mutex_owner(&rnp->boost_mtx) == t;
 		}
 
 		/*
