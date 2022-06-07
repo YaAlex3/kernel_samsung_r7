@@ -826,8 +826,11 @@ static void rcu_eqs_enter(bool user)
  */
 void rcu_idle_enter(void)
 {
-	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_idle_enter() invoked with irqs enabled!!!");
+	unsigned long flags;
+
+	local_irq_save(flags);
 	rcu_eqs_enter(false);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL_GPL(rcu_idle_enter);
 
