@@ -73,7 +73,7 @@ static void sync_exp_reset_tree_hotplug(struct rcu_state *rsp)
 	unsigned long flags;
 	unsigned long mask;
 	unsigned long oldmask;
-	int ncpus = smp_load_acquire(&rsp->ncpus); /* Order against locking. */
+	int ncpus = READ_ONCE(rsp->ncpus);
 	struct rcu_node *rnp;
 	struct rcu_node *rnp_up;
 
