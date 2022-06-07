@@ -870,7 +870,7 @@ void rcu_irq_exit(void)
 	rdtp = this_cpu_ptr(&rcu_dynticks);
 
 	/* Page faults can happen in NMI handlers, so check... */
-	if (rdtp->dynticks_nmi_nesting)
+	if (READ_ONCE(rdtp->dynticks_nmi_nesting))
 		return;
 
 	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_irq_exit() invoked with irqs enabled!!!");
@@ -1006,7 +1006,7 @@ void rcu_irq_enter(void)
 	rdtp = this_cpu_ptr(&rcu_dynticks);
 
 	/* Page faults can happen in NMI handlers, so check... */
-	if (rdtp->dynticks_nmi_nesting)
+	if (READ_ONCE(rdtp->dynticks_nmi_nesting))
 		return;
 
 	RCU_LOCKDEP_WARN(!irqs_disabled(), "rcu_irq_enter() invoked with irqs enabled!!!");
