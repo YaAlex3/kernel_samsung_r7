@@ -78,7 +78,6 @@ void synchronize_srcu(struct srcu_struct *sp);
 
 /**
  * srcu_read_lock_held - might we be in SRCU read-side critical section?
- * @sp: The srcu_struct structure to check
  *
  * If CONFIG_DEBUG_LOCK_ALLOC is selected, returns nonzero iff in an SRCU
  * read-side critical section.  In absence of CONFIG_DEBUG_LOCK_ALLOC,
