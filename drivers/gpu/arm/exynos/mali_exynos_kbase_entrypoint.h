@@ -62,4 +62,10 @@ bool mali_exynos_dmabuf_is_cached(struct dma_buf *dmabuf);
 typedef ssize_t (*sysfs_read_func)(struct device *, struct device_attribute *, char *);
 void mali_exynos_sysfs_set_gpu_model_callback(sysfs_read_func show_gpu_model_fn);
 
+void mali_exynos_coherency_reg_map(void);
+void mali_exynos_coherency_reg_unmap(void);
+void mali_exynos_coherency_set_coherency_feature(void);
+void mali_exynos_llc_set_awuser(void);
+void mali_exynos_llc_set_aruser(void);
+
 #endif /* _MALI_EXYNOS_KBASE_ENTRYPOINTS_H_ */
