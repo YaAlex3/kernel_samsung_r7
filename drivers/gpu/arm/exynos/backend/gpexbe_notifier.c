@@ -29,7 +29,7 @@
 #include "gpexbe_notifier_internal.h"
 
 /**
- * tmu_notifier(void) - Set gpu clock depending on TMU event.
+ * tmu_notifier() - Set gpu clock depending on TMU event.
  *
  * @notifier: unused.
  * @event: GPU temperature status.
@@ -84,7 +84,7 @@ static int gpu_pmqos_max_notifier(struct notifier_block *nb, unsigned long val, 
 {
 	GPU_LOG(MALI_EXYNOS_DEBUG, "%s: GPU pmqos max lock %ld kHz\n", __func__, val);
 
-	if (val > 0)
+	if (val > 0 && val <= gpex_clock_get_max_clock_limit())
 		gpex_clock_lock_clock(GPU_CLOCK_MAX_LOCK, PMQOS_LOCK, val);
 	else
 		gpex_clock_lock_clock(GPU_CLOCK_MAX_UNLOCK, PMQOS_LOCK, 0);
@@ -106,7 +106,7 @@ static struct notifier_block gpu_tmu_nb = {
 	.notifier_call = tmu_notifier,
 };
 
-int gpexbe_notifier_init(void)
+int gpexbe_notifier_init()
 {
 	int ret = 0;
 
@@ -123,7 +123,7 @@ int gpexbe_notifier_init(void)
 	return ret;
 }
 
-void gpexbe_notifier_term(void)
+void gpexbe_notifier_term()
 {
 	gpexbe_notifier_internal_remove(GPU_NOTIFIER_MIN_LOCK, &gpu_min_qos_notifier);
 	gpexbe_notifier_internal_remove(GPU_NOTIFIER_MAX_LOCK, &gpu_max_qos_notifier);

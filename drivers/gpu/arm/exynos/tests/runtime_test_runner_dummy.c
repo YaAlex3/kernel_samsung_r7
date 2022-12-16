@@ -20,11 +20,11 @@
 
 #include <runtime_test_runner.h>
 
-int runtime_test_runner_init(void)
+int runtime_test_runner_init()
 {
 	return 0;
 }
 
-void runtime_test_runner_term(void)
+void runtime_test_runner_term()
 {
 }

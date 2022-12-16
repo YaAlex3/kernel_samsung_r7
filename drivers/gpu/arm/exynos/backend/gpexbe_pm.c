@@ -65,7 +65,7 @@ static struct exynos_pm_domain *gpu_get_pm_domain(const char *g3d_genpd_name)
 	return pd;
 }
 
-int gpexbe_pm_get_status(void)
+int gpexbe_pm_get_status()
 {
 	int ret = 0;
 	unsigned int val = 0xf;
@@ -76,18 +76,18 @@ int gpexbe_pm_get_status(void)
 
 	return ret;
 }
-struct exynos_pm_domain *gpexbe_pm_get_exynos_pm_domain(void)
+struct exynos_pm_domain *gpexbe_pm_get_exynos_pm_domain()
 {
 	return exynos_pm_domain;
 }
 
-void gpexbe_pm_access_lock(void)
+void gpexbe_pm_access_lock()
 {
 	//DEBUG_ASSERT(exynos_pm_domain)
 	mutex_lock(&exynos_pm_domain->access_lock);
 }
 
-void gpexbe_pm_access_unlock(void)
+void gpexbe_pm_access_unlock()
 {
 	//DEBUG_ASSERT(exynos_pm_domain)
 	mutex_unlock(&exynos_pm_domain->access_lock);
@@ -130,17 +130,17 @@ static int gpexbe_pm_pd_control(int target_status)
 	return 0;
 }
 
-int gpexbe_pm_pd_control_up(void)
+int gpexbe_pm_pd_control_up()
 {
 	return gpexbe_pm_pd_control(1);
 }
 
-int gpexbe_pm_pd_control_down(void)
+int gpexbe_pm_pd_control_down()
 {
 	return gpexbe_pm_pd_control(0);
 }
 
-int gpexbe_pm_init(void)
+int gpexbe_pm_init()
 {
 	const char *g3d_genpd_name;
 
@@ -156,7 +156,7 @@ int gpexbe_pm_init(void)
 	return 0;
 }
 
-void gpexbe_pm_term(void)
+void gpexbe_pm_term()
 {
 	exynos_pm_domain = NULL;
 }

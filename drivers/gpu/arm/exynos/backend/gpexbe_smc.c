@@ -41,7 +41,7 @@ struct _smc_info {
 
 static struct _smc_info smc_info;
 
-int gpexbe_smc_protection_enable(void)
+int gpexbe_smc_protection_enable()
 {
 	int err;
 	unsigned long flags;
@@ -68,7 +68,7 @@ int gpexbe_smc_protection_enable(void)
 	return err;
 }
 
-int gpexbe_smc_protection_disable(void)
+int gpexbe_smc_protection_disable()
 {
 	int err;
 	unsigned long flags;
@@ -104,20 +104,20 @@ int gpexbe_smc_protection_disable(void)
 #define SMC_DRM_G3D_POWER_ON SMC_DRM_G3D_PPCFW_RESTORE
 #endif
 
-void gpexbe_smc_notify_power_on(void)
+void gpexbe_smc_notify_power_on()
 {
 	exynos_smc(SMC_DRM_G3D_POWER_ON, 0, 0, 0);
 }
 
-void gpexbe_smc_notify_power_off(void)
+void gpexbe_smc_notify_power_off()
 {
 	exynos_smc(SMC_DRM_G3D_POWER_OFF, 0, 0, 0);
 }
 #else
-void gpexbe_smc_notify_power_on(void)
+void gpexbe_smc_notify_power_on()
 {
 }
-void gpexbe_smc_notify_power_off(void)
+void gpexbe_smc_notify_power_off()
 {
 }
 #endif
@@ -126,6 +126,8 @@ int gpexbe_smc_init(void)
 {
 	spin_lock_init(&smc_info.lock);
 	smc_info.protection_enabled = false;
+
+	gpex_utils_get_exynos_context()->smc_info = &smc_info;
 
 	return 0;
 }

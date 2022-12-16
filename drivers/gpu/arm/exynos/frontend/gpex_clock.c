@@ -37,41 +37,37 @@
 
 static struct _clock_info clk_info;
 
-int gpex_clock_get_boot_clock(void)
+int gpex_clock_get_boot_clock()
 {
 	return clk_info.boot_clock;
 }
-int gpex_clock_get_max_clock(void)
+int gpex_clock_get_max_clock()
 {
 	return clk_info.gpu_max_clock;
 }
-int gpex_clock_get_max_clock_limit(void)
+int gpex_clock_get_max_clock_limit()
 {
 	return clk_info.gpu_max_clock_limit;
 }
-int gpex_clock_get_min_clock(void)
+int gpex_clock_get_min_clock()
 {
 	return clk_info.gpu_min_clock;
 }
-int gpex_clock_get_cur_clock(void)
+int gpex_clock_get_cur_clock()
 {
 	return clk_info.cur_clock;
 }
-int gpex_clock_get_max_lock(void)
+int gpex_clock_get_max_lock()
 {
 	return clk_info.max_lock;
 }
-int gpex_clock_get_min_lock(void)
+int gpex_clock_get_min_lock()
 {
 	return clk_info.min_lock;
 }
 int gpex_clock_get_clock(int level)
 {
 	return clk_info.table[level].clock;
-}
-u64 gpex_clock_get_time(int level)
-{
-	return clk_info.table[level].time;
 }
 u64 gpex_clock_get_time_busy(int level)
 {
@@ -80,7 +76,7 @@ u64 gpex_clock_get_time_busy(int level)
 /*******************************************
  * static helper functions
  ******************************************/
-static int gpex_clock_update_config_data_from_dt(void)
+static int gpex_clock_update_config_data_from_dt()
 {
 	int ret = 0;
 	struct freq_volt *fv_array;
@@ -200,27 +196,32 @@ int gpex_get_valid_gpu_clock(int clock, bool is_round_up)
 int gpex_clock_update_time_in_state(int clock)
 {
 	u64 current_time;
-	static u64 prev_time;
 	int level = gpex_clock_get_table_idx(clock);
 
-	if (prev_time == 0)
-		prev_time = get_jiffies_64();
+	if (clk_info.prev_time_in_state_time == 0)
+		clk_info.prev_time_in_state_time = get_jiffies_64();
 
 	current_time = get_jiffies_64();
 	if ((level >= gpex_clock_get_table_idx(clk_info.gpu_max_clock)) &&
 	    (level <= gpex_clock_get_table_idx(clk_info.gpu_min_clock))) {
-		clk_info.table[level].time += current_time - prev_time;
+		clk_info.table[level].time += current_time - clk_info.prev_time_in_state_time;
 		clk_info.table[level].time_busy +=
-			(u64)((current_time - prev_time) * gpexbe_utilization_get_utilization());
+			(u64)((current_time - clk_info.prev_time_in_state_time)
+					* gpexbe_utilization_get_utilization());
 		GPU_LOG(MALI_EXYNOS_DEBUG,
 			"%s: util = %d cur_clock[%d] = %d time_busy[%d] = %llu(%llu)\n", __func__,
 			gpexbe_utilization_get_utilization(), level, clock, level,
 			clk_info.table[level].time_busy / 100, clk_info.table[level].time);
 	}
 
-	prev_time = current_time;
+	clk_info.prev_time_in_state_time = current_time;
 
 	return 0;
+}
+
+u64 gpex_clock_get_time_in_state_last_update(void)
+{
+	return clk_info.prev_time_in_state_time;
 }
 
 static int gpex_clock_set_helper(int clock)
@@ -324,11 +325,13 @@ int gpex_clock_init(struct device **dev)
 	gpex_clock_init_time_in_state();
 	gpex_clock_sysfs_init(&clk_info);
 
+	gpex_utils_get_exynos_context()->clk_info = &clk_info;
+
 	/* TODO: return proper error when error */
 	return 0;
 }
 
-void gpex_clock_term(void)
+void gpex_clock_term()
 {
 	/* TODO: reset other clk_info variables too */
 	clk_info.kbdev = NULL;
@@ -349,7 +352,7 @@ int gpex_clock_get_table_idx(int clock)
 	return -1;
 }
 
-int gpex_clock_get_clock_slow(void)
+int gpex_clock_get_clock_slow()
 {
 	return gpexbe_clock_get_rate();
 }
@@ -401,7 +404,7 @@ int gpex_clock_set(int clk)
 	return ret;
 }
 
-int gpex_clock_prepare_runtime_off(void)
+int gpex_clock_prepare_runtime_off()
 {
 	gpex_clock_update_time_in_state(clk_info.cur_clock);
 
@@ -555,12 +558,12 @@ int gpex_clock_lock_clock(gpex_clock_lock_cmd_t lock_command, gpex_clock_lock_ty
 	return 0;
 }
 
-void gpex_clock_mutex_lock(void)
+void gpex_clock_mutex_lock()
 {
 	mutex_lock(&clk_info.clock_lock);
 }
 
-void gpex_clock_mutex_unlock(void)
+void gpex_clock_mutex_unlock()
 {
 	mutex_unlock(&clk_info.clock_lock);
 }
@@ -575,9 +578,4 @@ int gpex_clock_get_voltage(int clk)
 		/* TODO: print error msg */
 		return -EINVAL;
 	}
-}
-
-void gpex_clock_set_user_min_lock_input(int clock)
-{
-	clk_info.user_min_lock_input = clock;
 }

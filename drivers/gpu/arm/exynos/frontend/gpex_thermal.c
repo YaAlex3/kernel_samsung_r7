@@ -37,7 +37,7 @@ void gpex_thermal_set_status(bool status)
 	thermal.tmu_enabled = status;
 }
 
-int gpex_thermal_gpu_normal(void)
+int gpex_thermal_gpu_normal()
 {
 	int ret = 0;
 	ret = gpex_clock_lock_clock(GPU_CLOCK_MAX_UNLOCK, TMU_LOCK, 0);
@@ -149,7 +149,7 @@ static ssize_t show_kernel_sysfs_gpu_temp(char *buf)
 }
 CREATE_SYSFS_KOBJECT_READ_FUNCTION(show_kernel_sysfs_gpu_temp);
 
-static void gpex_thermal_create_sysfs_file(void)
+static void gpex_thermal_create_sysfs_file()
 {
 	GPEX_UTILS_SYSFS_DEVICE_FILE_ADD(tmu, show_tmu, set_tmu_control);
 	GPEX_UTILS_SYSFS_KOBJECT_FILE_ADD_RO(gpu_tmu, show_kernel_sysfs_gpu_temp);
@@ -158,14 +158,16 @@ static void gpex_thermal_create_sysfs_file(void)
 /***********************************************************************
  * INIT, TERM FUNCTIONS
  ***********************************************************************/
-int gpex_thermal_init(void)
+int gpex_thermal_init()
 {
 	gpex_thermal_create_sysfs_file();
+
+	gpex_utils_get_exynos_context()->thermal = &thermal;
 
 	return 0;
 }
 
-void gpex_thermal_term(void)
+void gpex_thermal_term()
 {
 	thermal.tmu_enabled = false;
 

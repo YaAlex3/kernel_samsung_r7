@@ -31,7 +31,7 @@
 static struct dvfs_info *dvfs;
 
 /* TODO: This should be moved to DVFS module */
-int gpex_dvfs_set_clock_callback(void)
+int gpex_dvfs_set_clock_callback()
 {
 	unsigned long flags;
 	int level = 0;

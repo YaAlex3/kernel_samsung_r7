@@ -30,12 +30,12 @@ int gpexbe_bts_set_bts_mo(int val)
 	return 0;
 }
 
-int gpexbe_bts_init(void)
+int gpexbe_bts_init()
 {
 	return 0;
 }
 
-void gpexbe_bts_term(void)
+void gpexbe_bts_term()
 {
 	return;
 }
