@@ -361,6 +361,7 @@ static int unregister_gadget(struct gadget_info *gi)
 	return 0;
 }
 
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
 static void clear_current_usb_link(struct usb_composite_dev *cdev)
 {
 	struct usb_configuration *c;
@@ -381,6 +382,7 @@ static void clear_current_usb_link(struct usb_composite_dev *cdev)
 		}
 	}
 }
+#endif
 
 static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		const char *page, size_t len)
@@ -1697,7 +1699,7 @@ static void android_work(struct work_struct *data)
 	if (!android_device && IS_ERR(android_device)) {
 		pr_info("usb: cannot send uevent because android_device not available \n");
 		return;
-	}	
+	}
 	spin_lock_irqsave(&cdev->lock, flags);
 	if (cdev->config)
 		status[1] = true;
@@ -2085,7 +2087,10 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		store_usblog_notify(NOTIFY_USBMODE_EXTRA, "enable 0", NULL);
 #endif
 		unregister_gadget(dev);
+
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
 		clear_current_usb_link(cdev);
+#endif
 		dev->enabled = false;
 	} else {
 #ifdef CONFIG_USB_NOTIFY_PROC_LOG
@@ -2261,7 +2266,7 @@ static struct config_group *gadgets_make(
 	if (android_device_create(gi) < 0) {
 		kfree(gi->composite.gadget_driver.function);
 		goto err;
-	}	
+	}
 
 	return &gi->group;
 
